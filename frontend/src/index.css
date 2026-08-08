@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply font-sans antialiased bg-slate-100 text-slate-900 dark:bg-midnight-950 dark:text-slate-200;
+  }
+  ::selection {
+    @apply bg-cyan-400/30 text-cyan-900 dark:text-cyan-100;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-300 dark:bg-midnight-600;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-cyan-400/60;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-white/70 dark:bg-white/[0.04] border border-slate-200/80 dark:border-white/[0.08] backdrop-blur-xl;
+  }
+  .glass-strong {
+    @apply bg-white/80 dark:bg-midnight-800/80 border border-slate-200 dark:border-white/[0.1] backdrop-blur-2xl shadow-card;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-400 text-midnight-950 font-semibold px-5 py-2.5 text-sm transition-all hover:shadow-glow hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-white/15 text-slate-700 dark:text-slate-200 font-medium px-5 py-2.5 text-sm transition-all hover:border-cyan-400/60 hover:text-cyan-600 dark:hover:text-cyan-300 active:scale-[0.98];
+  }
+  .input {
+    @apply w-full rounded-xl bg-slate-100 dark:bg-midnight-900/70 border border-slate-300 dark:border-white/10 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-colors focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20;
+  }
+  .label {
+    @apply block text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5;
+  }
+  .card {
+    @apply rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-midnight-800/70 shadow-card;
+  }
+  .section-eyebrow {
+    @apply inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3.5 py-1 text-xs font-semibold uppercase tracking-widest text-cyan-600 dark:text-cyan-300;
+  }
+}
