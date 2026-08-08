@@ -6,13 +6,17 @@
   "author": "",
   "license": "MIT",
   "scripts": {
-    "compile": "compact compile contracts/bridgeguard.compact contracts/managed/bridgeguard",
+    "compile": "npm run compile:v1 && npm run compile:v2",
+    "compile:v1": "compact compile contracts/bridgeguard.compact contracts/managed/bridgeguard",
+    "compile:v2": "compact compile contracts/bridgeguard-v2.compact contracts/managed/bridgeguard-v2",
     "build": "npx tsc --noEmit || true",
     "setup": "npx tsx src/setup.ts",
-    "deploy": "npx tsx src/deploy.ts",
+    "deploy": "npx tsx src/deploy-v2.ts",
     "cli": "npx tsx src/cli.ts",
     "check-balance": "npx tsx src/check-balance.ts",
     "network": "npx tsx src/network.ts",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
     "proof-server:start": "docker compose up -d",
     "proof-server:stop": "docker compose down",
     "clean": "rm -rf contracts/managed .midnight-state.json .midnight-wallet-state",
@@ -36,6 +40,7 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
+    "@rolldown/binding-win32-x64-msvc": "^1.2.3",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
     "tsx": "^4.23.1",
