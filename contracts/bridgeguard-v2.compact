@@ -1,0 +1,198 @@
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+// ============================================================================
+// BridgeGuard AI v2 — Privacy-Preserving Cross-Chain Bridge Security Platform
+//
+// v2 additions over bridgeguard.compact (v1):
+//   - Per-bridge assessment records: latestVerdicts / latestWithin are Maps
+//     keyed by bridge id, written inside evaluateBridge(). A frontend can now
+//     render "latest verdict per bridge" directly from the ledger instead of
+//     relying on the single global lastVerdict/lastWithinTolerance singletons
+//     (which only reflect the most recently evaluated bridge).
+//
+// PUBLIC LEDGER STATE (visible to every network observer)
+// ---------------------------------------------------------------------------
+//   bridges         : Map<Uint<64>, Bridge>  the public bridge registry.
+//                     Each Bridge holds the metadata that makes bridge
+//                     security publicly auditable:
+//                       - id, name (public label)
+//                       - srcChain / dstChain (which chains it connects)
+//                       - tvl (public liquidity snapshot)
+//                       - audited (whether a public audit exists)
+//                       - incidents (publicly-known incident count)
+//                       - riskScore (coarse base risk score, 0..100)
+//                       - status (0 active, 1 flagged, 2 compromised)
+//   registryCount   : Counter  how many bridges have been registered
+//   assessmentCount : Counter  how many confidential evaluations have run
+//   lastVerdict     : Uint<8>  coarse risk verdict of the last evaluation
+//                              (0 = LOW, 1 = MEDIUM, 2 = HIGH, 3 = CRITICAL)
+//   lastWithinTolerance : Boolean  whether that verdict met the caller's
+//                                 (hidden) personal tolerance
+//   lastBridgeId    : Uint<64> which bridge the last evaluation concerned
+//   latestVerdicts  : Map<Uint<64>, Uint<8>>   latest coarse verdict per bridge
+//   latestWithin    : Map<Uint<64>, Boolean>   latest tolerance result per bridge
+//
+//   -> An on-chain observer can see the full registry, a coarse verdict
+//      history (per bridge), and counts, but NOT the exact transfer amounts or
+//      tolerance levels that produced each verdict.
+//
+// PRIVATE (proved in zero knowledge, NEVER written to the ledger)
+// ---------------------------------------------------------------------------
+//   amount   : the exact transfer amount a user plans to move (circuit param)
+//   maxRisk  : the user's personal risk tolerance, 0..3 (circuit param)
+//   getRiskIntel(): a declared witness supplied by the off-chain DApp — a
+//              confidential incident-intelligence feed. Its value is used to
+//              compute the verdict and is never revealed.
+//
+//   What evaluateBridge() discloses is ONLY:
+//       { bridgeId, coarse verdict, whether it fit the user's tolerance }
+//   The exact numbers that produced the verdict remain inside the proof.
+//   Private inputs are never logged, stored, or emitted by this contract.
+// ============================================================================
+
+witness getRiskIntel(): Uint<8>;
+
+// Bounds (inline literals): MAX_BRIDGES=10, TVL_CAP=10^15, AMOUNT_CAP=10^12,
+// INTEL_CAP=20. The caps keep the exposure arithmetic overflow-free in
+// Uint<64> (2*tvl < 2^63 given TVL_CAP).
+
+struct Bridge {
+  id: Uint<64>;
+  name: Opaque<"string">;
+  srcChain: Uint<64>;
+  dstChain: Uint<64>;
+  tvl: Uint<64>;
+  audited: Uint<8>;
+  incidents: Uint<8>;
+  riskScore: Uint<8>;
+  status: Uint<8>;
+}
+
+export ledger bridges: Map<Uint<64>, Bridge>;
+export ledger registryCount: Counter;
+export ledger assessmentCount: Counter;
+export ledger lastVerdict: Uint<8>;
+export ledger lastWithinTolerance: Boolean;
+export ledger lastBridgeId: Uint<64>;
+export ledger latestVerdicts: Map<Uint<64>, Uint<8>>;
+export ledger latestWithin: Map<Uint<64>, Boolean>;
+
+// --- Public registry write -------------------------------------------------
+// Registers a bridge. All metadata is intentionally PUBLIC: bridge security
+// metadata is shared infrastructure data. The disclose() wrappers mark the
+// deliberate public boundary. Risk scoring is computed from public facts.
+export circuit registerBridge(
+  name: Opaque<"string">,
+  srcChain: Uint<64>,
+  dstChain: Uint<64>,
+  tvl: Uint<64>,
+  audited: Uint<8>,
+  incidents: Uint<8>,
+): [] {
+  assert(registryCount < 10, "bridge registry is full");
+  assert(srcChain != dstChain, "source and destination chains must differ");
+  assert(tvl <= 1000000000000000, "TVL exceeds supported range");
+  assert(incidents <= 20, "incident count out of range");
+  assert(audited == 0 || audited == 1, "audited must be 0 or 1");
+
+  const id: Uint<64> = registryCount as Uint<64>;
+  const b = Bridge {
+    id: id,
+    name: disclose(name),
+    srcChain: disclose(srcChain),
+    dstChain: disclose(dstChain),
+    tvl: disclose(tvl),
+    audited: disclose(audited),
+    incidents: disclose(incidents),
+    riskScore: disclose(computeBaseScore(audited, incidents)),
+    status: disclose(0),
+  };
+  bridges.insert(id, b);
+  registryCount.increment(1);
+}
+
+// --- Confidential risk evaluation (THE privacy circuit) --------------------
+// The user's transfer amount and risk tolerance are private witnesses, as is
+// the DApp-supplied intel feed (getRiskIntel). The circuit proves, without
+// revealing those inputs, what the coarse risk verdict for a bridge is and
+// whether it fits the user's tolerance. Only {bridgeId, verdict, within} is
+// disclosed on the ledger — the per-bridge record preserves a public, coarse
+// verdict history without exposing the private inputs that produced it.
+export circuit evaluateBridge(
+  bridgeId: Uint<64>,
+  amount: Uint<64>,
+  maxRisk: Uint<8>,
+): [] {
+  assert(amount > 0, "transfer amount must be positive");
+  assert(amount <= 1000000000000, "transfer amount exceeds supported range");
+  assert(maxRisk <= 3, "risk tolerance must be between 0 (low) and 3 (critical)");
+  assert(bridges.member(disclose(bridgeId)), "bridge not found");
+
+  const intel: Uint<8> = getRiskIntel();
+  assert(intel <= 20, "intel incident count out of range");
+
+  const b = bridges.lookup(disclose(bridgeId));
+  const verdict: Uint<8> = computeVerdict(b, amount, intel);
+  const within: Boolean = verdict <= maxRisk;
+
+  lastVerdict = disclose(verdict);
+  lastWithinTolerance = disclose(within);
+  lastBridgeId = disclose(bridgeId);
+  latestVerdicts.insert(disclose(bridgeId), disclose(verdict));
+  latestWithin.insert(disclose(bridgeId), disclose(within));
+  assessmentCount.increment(1);
+}
+
+// --- Public maintenance ------------------------------------------------------
+// Anyone may mark a bridge active (0), flagged (1), or compromised (2).
+// Public by design — status changes are transparency events.
+export circuit flagBridge(
+  bridgeId: Uint<64>,
+  newStatus: Uint<8>,
+): [] {
+  assert(newStatus <= 2, "status must be 0 (active), 1 (flagged), or 2 (compromised)");
+  assert(bridges.member(disclose(bridgeId)), "bridge not found");
+
+  const b = bridges.lookup(disclose(bridgeId));
+  const updated = Bridge {
+    id: b.id,
+    name: b.name,
+    srcChain: b.srcChain,
+    dstChain: b.dstChain,
+    tvl: b.tvl,
+    audited: b.audited,
+    incidents: b.incidents,
+    riskScore: b.riskScore,
+    status: disclose(newStatus),
+  };
+  bridges.insert(disclose(bridgeId), updated);
+}
+
+// --- Pure helpers -------------------------------------------------------------
+
+// Base risk score from public facts: unaudited bridges start penalized and
+// each public incident adds weight. Clamped to 0..100.
+pure circuit computeBaseScore(audited: Uint<8>, incidents: Uint<8>): Uint<8> {
+  const auditPenalty: Uint<8> = audited == 1 ? 0 : 20;
+  const incidentScore: Uint<8> = (incidents * 5) as Uint<8>;
+  const raw: Uint<32> = (auditPenalty as Uint<8>) + (incidentScore as Uint<8>);
+  const clamped: Uint<32> = raw > 100 as Uint<32> ? 100 as Uint<32> : raw;
+  return clamped as Uint<8>;
+}
+
+// Private risk model: combines the public base score, public incidents,
+// the (private) intel feed, and the exposure of the (private) amount
+// relative to the bridge's public liquidity. Only the coarse verdict escapes.
+pure circuit computeVerdict(b: Bridge, amount: Uint<64>, intel: Uint<8>): Uint<8> {
+  const exposure: Uint<8> = amount > (b.tvl * 2) ? 15 : amount > b.tvl ? 8 : 0;
+  const total: Uint<32> =
+    (b.riskScore as Uint<8>) +
+    ((b.incidents * 5) as Uint<8>) +
+    ((intel * 8) as Uint<8>) +
+    exposure;
+  const verdict: Uint<8> =
+    total >= 75 as Uint<32> ? 3 : total >= 55 as Uint<32> ? 2 : total >= 30 as Uint<32> ? 1 : 0;
+  return verdict;
+}
