@@ -474,10 +474,27 @@ async function handlerHealth() {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
+let retryCount = 0;
+const MAX_INIT_RETRIES = 15;
+const RETRY_DELAY_MS = 15000;
+
 async function initializeBackground() {
+  if (isInitializing === false && walletCtx !== null) return; // already successfully initialized
+  isInitializing = true;
+
   try {
-    console.log('  [Async Init] Connecting to wallet...');
-    lastSyncCheck = 'Connecting...';
+    if (walletCtx) {
+      console.log('  [Async Init] Stopping previous wallet instance to release connections...');
+      try {
+        await walletCtx.wallet.stop();
+      } catch (stopErr) {
+        console.warn('  [Async Init] Error stopping old wallet:', stopErr);
+      }
+      walletCtx = null;
+    }
+
+    console.log(`  [Async Init] Connecting to wallet (Attempt ${retryCount + 1}/${MAX_INIT_RETRIES})...`);
+    lastSyncCheck = `Connecting (Attempt ${retryCount + 1})...`;
     walletCtx = await createWallet({ network, networkConfig, seed: SEED });
 
     console.log('  [Async Init] Syncing with network (this can take several minutes)...');
@@ -531,8 +548,9 @@ async function initializeBackground() {
     });
     console.log('  ✅ [Async Init] Connected!\n');
     isInitializing = false;
+    retryCount = 0; // reset on success
   } catch (err: any) {
-    console.error('❌ Background Initialization Failed:', err);
+    console.error(`❌ Background Initialization Attempt ${retryCount + 1} Failed:`, err);
     if (err && typeof err === 'object') {
       console.dir(err, { depth: null });
       if (err.cause) {
@@ -542,8 +560,34 @@ async function initializeBackground() {
         }
       }
     }
+    
     initError = err;
     lastSyncCheck = `Failed: ${err.message || String(err)}`;
+
+    // Stop current wallet instance on failure to ensure we release active ports/WS connections
+    if (walletCtx) {
+      try {
+        await walletCtx.wallet.stop();
+      } catch (stopErr) {
+        console.warn('  [Async Init] Error stopping wallet on failure:', stopErr);
+      }
+      walletCtx = null;
+    }
+
+    isInitializing = false;
+
+    if (retryCount < MAX_INIT_RETRIES - 1) {
+      retryCount++;
+      const nextDelay = RETRY_DELAY_MS + (retryCount * 5000); // progressive delay to bypass quota rate limits
+      console.log(`  [Async Init] Retrying in ${nextDelay / 1000}s...`);
+      setTimeout(() => {
+        initializeBackground().catch((retryErr) => {
+          console.error('Error starting initialization retry:', retryErr);
+        });
+      }, nextDelay);
+    } else {
+      console.error('  [Async Init] Max validation/sync retry count limit reached. Stopping.');
+    }
   }
 }
 
