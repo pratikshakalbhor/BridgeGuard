@@ -23,12 +23,14 @@ import { WebSocket } from 'ws';
 import * as Rx from 'rxjs';
 
 // Midnight SDK imports
-import { findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
+import { createUnprovenCallTx, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 import { httpClientProofProvider } from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
 import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
 import { levelPrivateStateProvider } from '@midnight-ntwrk/midnight-js-level-private-state-provider';
 import { NodeZkConfigProvider } from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
 import { CompiledContract } from '@midnight-ntwrk/midnight-js-protocol/compact-js';
+import { fromHex, toHex } from '@midnight-ntwrk/midnight-js-utils';
+import { Transaction } from '@midnight-ntwrk/ledger-v8';
 
 // @ts-expect-error Required for wallet sync
 globalThis.WebSocket = WebSocket;
@@ -306,6 +308,96 @@ async function handlerFlag(body: any) {
   return { txId: tx.public.txId, blockHeight: tx.public.blockHeight, bridgeId: bridgeId.toString(), status: status.toString(), walletAddress: attributionAddress(body.walletAddress) };
 }
 
+// ─── Phase 0 POC: Lace as signer/funder ─────────────────────────────────────
+//
+// Proves the split pipeline:
+//   backend createUnprovenCallTx → backend proveTx → serialize(unbound, hex)
+//   → Lace balanceUnsealedTransaction (user approval + DUST fee)
+//   → Lace submitTransaction → Preview → indexer confirmation.
+//
+// These endpoints build + prove ONLY. Balancing, signing, fee payment and
+// submission happen in the user's Lace wallet. The private bridge-analysis
+// inputs (amount, maxRisk, intel) never leave this process and are never
+// logged; only the serialized PUBLIC transaction transcript is returned.
+
+// Diagnostic logging for steps 1-3 (create → prove → serialize). No private
+// inputs are ever written to the log or the HTTP response.
+async function handlerPocPrepareEvaluate(body: any) {
+  const bridgeId = BigInt(body.bridgeId);
+  const amount = BigInt(body.amount);
+  const maxRisk = BigInt(body.maxRisk);
+  const intel = Math.max(0, Math.min(20, Math.floor(Number(body.intel ?? 0))));
+
+  console.log('[POC] ── prepare evaluateBridge ──');
+  console.log('[POC] 1) creating unproven call tx (circuit: evaluateBridge)');
+  providers!.privateStateProvider.setContractAddress(deploymentAddress);
+  await providers!.privateStateProvider.set(PRIVATE_STATE_ID, { intel });
+
+  const callTxData = await createUnprovenCallTx(providers!, {
+    compiledContract: compiledContract as never,
+    contractAddress: deploymentAddress,
+    circuitId: 'evaluateBridge',
+    privateStateId: PRIVATE_STATE_ID,
+    args: [bridgeId, amount, maxRisk],
+  });
+
+  console.log('[POC] 2) generating proof (proof server)');
+  const provenTx = await providers!.proofProvider.proveTx(callTxData.private.unprovenTx);
+
+  const serializedTxHex = toHex(provenTx.serialize());
+  console.log(
+    `[POC] 3) serialized proven unbound tx: encoding=hex bytes=${serializedTxHex.length / 2} hexChars=${serializedTxHex.length} ` +
+      `(Transaction<SignatureEnabled, Proof, PreBinding>)`,
+  );
+  console.log('[POC] 4) handing serialized tx to Lace balanceUnsealedTransaction...');
+
+  return {
+    circuit: 'evaluateBridge',
+    bridgeId: bridgeId.toString(),
+    serializedTxHex,
+    serializedTxBytes: serializedTxHex.length / 2,
+    encoding: 'hex',
+    note: 'amount/maxRisk/intel remain private inside the ZK proof and are not returned.',
+  };
+}
+
+// Receives the Lace-balanced sealed tx, derives its identifier locally, and
+// watches the indexer for on-chain confirmation (steps 7-8).
+async function handlerPocFinalize(body: any) {
+  const balancedTxHex = String(body.balancedTxHex ?? '').trim();
+  if (!/^(?:[0-9a-f]{2})+$/i.test(balancedTxHex)) {
+    throw new Error('balancedTxHex must be a hex-encoded transaction');
+  }
+
+  console.log('[POC] 7) deriving transaction identifier from balanced sealed tx');
+  const finalizedTx = Transaction.deserialize('signature', 'proof', 'binding', fromHex(balancedTxHex));
+  const txId = finalizedTx.identifiers()[0];
+  const txHash = finalizedTx.transactionHash();
+  console.log(`[POC] 7) txId=${txId} txHash=${txHash}`);
+
+  console.log('[POC] 8) watching indexer for confirmation');
+  const data = await withTimeout(
+    providers!.publicDataProvider.watchForTxData(txId),
+    120_000,
+    null as never,
+  );
+  if (!data) {
+    console.log('[POC] 8) not confirmed on the indexer within 120s');
+    return { txId, txHash, status: 'pending', note: 'not yet confirmed on the indexer within 120s' };
+  }
+  console.log(
+    `[POC] 8) confirmed: blockHeight=${data.blockHeight} blockHash=${data.blockHash} txStatus=${String(data.status)}`,
+  );
+  return {
+    txId,
+    txHash,
+    blockHeight: data.blockHeight,
+    blockHash: data.blockHash,
+    txStatus: String(data.status),
+    blockTimestamp: data.blockTimestamp,
+  };
+}
+
 // ─── Health probe (real connectivity, no placeholders) ───────────────────────
 
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
@@ -382,12 +474,29 @@ async function main() {
   console.log(`║  BridgeGuard AI v2 server — network: ${network}`);
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 
-  const deployment = getDeployment(network);
-  if (!deployment) {
-    console.error(`No deploy on file for network ${network}. Run \`npx tsx src/deploy-v2.ts --network ${network}\` first.`);
-    process.exit(1);
+  if (process.env.NODE_ENV === 'production') {
+    const hasEnvWallet = !!(process.env.MIDNIGHT_WALLET_MNEMONIC || process.env.MIDNIGHT_WALLET_SEED);
+    if (!hasEnvWallet) {
+      console.error('\n❌ Production Startup Error: MIDNIGHT_WALLET_MNEMONIC or MIDNIGHT_WALLET_SEED must be configured in environment variables for production deployments to ensure persistent wallet state.');
+      process.exit(1);
+    }
+    const pwd = (process.env.PRIVATE_STATE_PASSWORD || '').trim();
+    if (!pwd || pwd === 'Local-Devnet-Development-Placeholder-1' || pwd.length < 16) {
+      console.error('\n❌ Production Startup Error: PRIVATE_STATE_PASSWORD must be configured and be at least 16 characters long in production environments.');
+      process.exit(1);
+    }
   }
-  deploymentAddress = deployment.address;
+
+  let deploymentAddressResolved = process.env.MIDNIGHT_CONTRACT_ADDRESS;
+  if (!deploymentAddressResolved) {
+    const deployment = getDeployment(network);
+    if (!deployment) {
+      console.error(`❌ No deploy on file for network ${network}. Run \`npx tsx src/deploy-v2.ts --network ${network}\` first, or set MIDNIGHT_CONTRACT_ADDRESS.`);
+      process.exit(1);
+    }
+    deploymentAddressResolved = deployment.address;
+  }
+  deploymentAddress = deploymentAddressResolved;
   console.log(`  Contract: ${deploymentAddress}`);
   console.log(`  Network: ${network}\n`);
 
@@ -405,23 +514,23 @@ async function main() {
   // long-running server can actually submit register/evaluate/flag transactions.
   if (network !== 'undeployed') {
     console.log('  Checking DUST...');
-    const dustState = await Rx.firstValueFrom(walletCtx.wallet.state().pipe(Rx.filter((s) => s.isSynced)));
+    const dustState = await Rx.firstValueFrom(walletCtx!.wallet.state().pipe(Rx.filter((s) => s.isSynced)));
     const unregistered = dustState.unshielded.availableCoins.filter((c: any) => !c.meta?.registeredForDustGeneration);
     if (unregistered.length > 0) {
       console.log(`  Registering ${unregistered.length} NIGHT UTXO(s) for DUST generation...`);
-      const recipe = await walletCtx.wallet.registerNightUtxosForDustGeneration(
+      const recipe = await walletCtx!.wallet.registerNightUtxosForDustGeneration(
         unregistered,
-        walletCtx.unshieldedKeystore.getPublicKey(),
-        (payload: Uint8Array) => walletCtx.unshieldedKeystore.signData(payload),
+        walletCtx!.unshieldedKeystore.getPublicKey(),
+        (payload: Uint8Array) => walletCtx!.unshieldedKeystore.signData(payload),
       );
-      const finalized = await walletCtx.wallet.finalizeRecipe(recipe);
-      await walletCtx.wallet.submitTransaction(finalized);
+      const finalized = await walletCtx!.wallet.finalizeRecipe(recipe);
+      await walletCtx!.wallet.submitTransaction(finalized);
     }
     if (dustState.dust.balance(new Date()) === 0n) {
       console.log('  Waiting for DUST to be minted...');
       const dustDeadline = Date.now() + 10 * 60 * 1000;
       await Rx.firstValueFrom(
-        walletCtx.wallet.state().pipe(
+        walletCtx!.wallet.state().pipe(
           Rx.throttleTime(5000),
           Rx.filter((s) => s.isSynced),
           Rx.filter((s) => s.dust.balance(new Date()) > 0n),
@@ -431,17 +540,17 @@ async function main() {
         console.warn('  ⚠ DUST not yet available — transactions will fail until it is minted.');
       });
     }
-    const postDust = await Rx.firstValueFrom(walletCtx.wallet.state().pipe(Rx.filter((s) => s.isSynced)));
+    const postDust = await Rx.firstValueFrom(walletCtx!.wallet.state().pipe(Rx.filter((s) => s.isSynced)));
     console.log(`  ✓ DUST balance: ${postDust.dust.balance(new Date()).toLocaleString()}\n`);
   }
 
   console.log('  Setting up providers...');
-  providers = await createProviders(walletCtx);
+  providers = await createProviders(walletCtx!);
 
   console.log('  Connecting to contract...');
   deployed = await findDeployedContract(providers, {
     compiledContract: compiledContract as any,
-    contractAddress: deployment.address,
+    contractAddress: deploymentAddress,
     privateStateId: PRIVATE_STATE_ID,
     initialPrivateState: { intel: 0 },
   });
@@ -467,7 +576,9 @@ async function main() {
           return json(res, 200, await currentBalance());
         }
         if (req.method === 'GET' && pathname === '/api/health') {
-          return json(res, 200, await handlerHealth());
+          const health = await handlerHealth();
+          const allHealthy = health.services.every((s) => s.healthy);
+          return json(res, allHealthy ? 200 : 503, health);
         }
         if (req.method === 'POST' && pathname === '/api/register') {
           const body = await readBody(req);
@@ -484,20 +595,37 @@ async function main() {
           const result = await handlerFlag(body);
           return json(res, 200, result);
         }
+        if (req.method === 'POST' && pathname === '/api/poc/prepare-evaluate') {
+          const body = await readBody(req);
+          const result = await handlerPocPrepareEvaluate(body);
+          return json(res, 200, result);
+        }
+        if (req.method === 'POST' && pathname === '/api/poc/finalize') {
+          const body = await readBody(req);
+          const result = await handlerPocFinalize(body);
+          return json(res, 200, result);
+        }
+        if (req.method === 'GET' && pathname === '/poc.html') {
+          const pocFile = path.resolve(__dirname, '..', 'poc', 'poc.html');
+          if (!fs.existsSync(pocFile)) return json(res, 404, { error: 'poc.html not built' });
+          res.writeHead(200, { 'Content-Type': MIME['.html'] });
+          return res.end(fs.readFileSync(pocFile));
+        }
         if (req.method === 'GET' && pathname.startsWith('/api/')) {
           return json(res, 404, { error: 'Unknown endpoint' });
         }
         return serveStatic(req, res, pathname);
       } catch (err: any) {
+        console.error('API Error in server.ts:', err);
         const msg = err?.message || String(err);
         return json(res, 500, { error: msg });
       }
   });
 
-  await new Promise<void>((resolve) => server.listen(PORT, resolve));
-  console.log(`  🚀 Server listening on http://localhost:${PORT}\n`);
-  console.log(`  Frontend:  http://localhost:${PORT}/`);
-  console.log(`  API:       http://localhost:${PORT}/api/state`);
+  await new Promise<void>((resolve) => server.listen(PORT, '0.0.0.0', resolve));
+  console.log(`  🚀 Server listening on http://0.0.0.0:${PORT}\n`);
+  console.log(`  Frontend:  http://0.0.0.0:${PORT}/`);
+  console.log(`  API:       http://0.0.0.0:${PORT}/api/state`);
 
   const shutdown = async () => {
     console.log('\n  Shutting down...');
