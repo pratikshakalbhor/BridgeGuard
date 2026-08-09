@@ -2,7 +2,7 @@
 FROM node:22-alpine
 
 # Install git and other system dependencies if needed
-RUN apk add --no-cache git
+RUN apk add --no-cache git ca-certificates
 
 WORKDIR /app
 

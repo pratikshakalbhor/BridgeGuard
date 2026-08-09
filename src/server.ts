@@ -567,7 +567,11 @@ async function main() {
   }
   deploymentAddress = deploymentAddressResolved;
   console.log(`  Contract: ${deploymentAddress}`);
-  console.log(`  Network: ${network}\n`);
+  console.log(`  Network ID: ${network}`);
+  console.log(`  Indexer URL: ${networkConfig.indexer}`);
+  console.log(`  Indexer WS URL: ${networkConfig.indexerWS}`);
+  console.log(`  Node URL: ${networkConfig.node}`);
+  console.log(`  Proof Server: ${networkConfig.proofServer}\n`);
 
   const server = http.createServer(async (req: any, res: any) => {
       // Enable CORS for frontend API clients
