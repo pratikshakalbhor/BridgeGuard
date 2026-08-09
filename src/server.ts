@@ -607,6 +607,10 @@ async function main() {
       console.error('\n❌ Production Startup Error: PRIVATE_STATE_PASSWORD must be configured and be at least 16 characters long in production environments.');
       process.exit(1);
     }
+    if (network === 'undeployed') {
+      console.error('\n❌ Production Startup Error: The MIDNIGHT_NETWORK environment variable must be set to "preview" or "preprod" for production deployments. Running on "undeployed" (local devnet) is not supported in production.');
+      process.exit(1);
+    }
   }
 
   let deploymentAddressResolved = process.env.MIDNIGHT_CONTRACT_ADDRESS;
