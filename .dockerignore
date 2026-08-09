@@ -1,0 +1,35 @@
+# Ignore dependencies
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+
+# Ignore environment variables and wallet secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.midnight-state.json
+.midnight-wallet-state/
+bridgeguard-state-v2/
+midnight-level-db/
+*.seed
+
+# Ignore IDE config and version control
+.git/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore test coverage and temporary logs
+coverage/
+logs/
+*.log
+tmp/
+temp/
+e2e/
+screenshots/
+browser-profiles/
+chrome-user-data*/
+*puppeteer*profile*/
