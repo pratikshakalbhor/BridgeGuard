@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@midnight-ntwrk/dapp-connector-api": "^4.0.1",
+    "bridgeguard-ai": "file:..",
     "framer-motion": "^13.0.0",
     "lucide-react": "^0.475.0",
     "react": "^18.3.1",
