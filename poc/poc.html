@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BridgeGuard AI — Phase 0 POC: Lace as signer/funder</title>
+<style>
+  :root { color-scheme: dark; }
+  body { background: #0d1117; color: #e6edf3; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 0; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 15px; margin-top: 28px; border-bottom: 1px solid #30363d; padding-bottom: 6px; }
+  p.small { color: #8b949e; font-size: 12px; }
+  button { background: #238636; color: #fff; border: 0; padding: 8px 14px; border-radius: 6px; font: inherit; cursor: pointer; }
+  button:hover { background: #2ea043; }
+  button:disabled { background: #30363d; cursor: not-allowed; }
+  button.secondary { background: #21262d; border: 1px solid #30363d; }
+  label { display: block; margin: 8px 0 2px; font-size: 12px; color: #8b949e; }
+  select, input { background: #161b22; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 6px 8px; font: inherit; width: 100%; box-sizing: border-box; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  .badge { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 12px; margin-left: 8px; }
+  .ok { background: #1a7f37; color: #fff; }
+  .bad { background: #b62324; color: #fff; }
+  .warn { background: #9e6a03; color: #fff; }
+  #log { background: #010409; border: 1px solid #30363d; border-radius: 8px; padding: 12px; min-height: 260px; max-height: 480px; overflow: auto; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+  #log .err { color: #ff7b72; }
+  #log .ok { color: #3fb950; }
+  #log .step { color: #79c0ff; }
+  #log .dim { color: #8b949e; }
+</style>
+</head>
+<body>
+<main>
+  <h1>BridgeGuard AI — Phase 0 POC</h1>
+  <p class="small">Prove the split pipeline: backend <b>createUnprovenCallTx → proveTx → serialize (hex)</b> → Lace <b>balanceUnsealedTransaction</b> (approval + DUST fee) → Lace <b>submitTransaction</b> → Midnight Preview → indexer confirmation.<br />
+  The bridge-analysis <b>amount</b>, <b>maxRisk</b> and <b>intel</b> stay private inside the ZK proof — they are never logged or returned. Lace only balances, signs and pays the DUST fee.</p>
+
+  <h2>1. Wallet connection</h2>
+  <p id="walletStatus" class="small">Not connected.</p>
+  <button id="connectBtn" onclick="connect()">Connect Lace / Midnight wallet</button>
+  <button class="secondary" onclick="refreshBalances()">Refresh balances</button>
+
+  <h2>2. Wallet readiness</h2>
+  <div id="readiness"></div>
+
+  <h2>3. Test bridge (from /api/state)</h2>
+  <div class="row">
+    <div>
+      <label for="bridgeId">Registered bridge</label>
+      <select id="bridgeId"></select>
+    </div>
+    <div>
+      <label for="amount">Test amount (private, never logged)</label>
+      <input id="amount" type="number" min="1" value="25000000" />
+    </div>
+    <div>
+      <label for="maxRisk">Max risk tolerance 0–3 (private)</label>
+      <input id="maxRisk" type="number" min="0" max="3" value="2" />
+    </div>
+    <div>
+      <label for="intel">Intel feed 0–20 (private)</label>
+      <input id="intel" type="number" min="0" max="20" value="3" />
+    </div>
+  </div>
+  <p style="margin-top:12px"><button id="runBtn" onclick="runPoc()" disabled>Run POC: evaluate via Lace</button></p>
+
+  <h2>4. Diagnostics</h2>
+  <div id="log">// no activity yet</div>
+</main>
+
+<script>
+'use strict';
+
+const NETWORK = 'preview';
+const NATIVE_TOKEN_RAW = '0000000000000000000000000000000000000000000000000000000000000000';
+let connectedApi = null; // RETAINED on purpose — must not be discarded.
+let walletMeta = null;
+
+const $ = (id) => document.getElementById(id);
+const fmt = (v) => {
+  try { return BigInt(v).toLocaleString('en-US'); } catch { return String(v); }
+};
+function log(line, cls) {
+  const pre = $('log');
+  const div = document.createElement('div');
+  div.className = cls || '';
+  div.textContent = line;
+  pre.appendChild(div);
+  pre.scrollTop = pre.scrollHeight;
+}
+const errMsg = (e) => {
+  if (typeof e === 'object' && e) {
+    const code = e.code || e.name || '';
+    const msg = e.message || String(e);
+    return (code && msg !== code ? code + ': ' : '') + msg;
+  }
+  return String(e);
+};
+async function post(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+function findWallet() {
+  if (!window.midnight) return null;
+  const entries = Object.entries(window.midnight);
+  const compatible = ([, w]) => w && typeof w.connect === 'function';
+  for (const key of ['1am', 'mnLace', 'lace', 'midnight']) {
+    const entry = entries.find(([id]) => id === key);
+    if (entry && compatible(entry)) return { id: entry[0], wallet: entry[1] };
+  }
+  for (const entry of entries) if (compatible(entry)) return { id: entry[0], wallet: entry[1] };
+  return null;
+}
+
+function setConnected(ok, why) {
+  $('runBtn').disabled = !ok;
+  const el = $('walletStatus');
+  el.innerHTML = ok
+    ? 'Connected: <span class="badge ok">Lace ready</span> ' + (why || '')
+    : 'Not ready: <span class="badge bad">' + (why || 'disconnected') + '</span>';
+}
+
+async function connect() {
+  log('→ connect()');
+  const found = findWallet();
+  if (!found) { log('✗ No Midnight wallet extension detected (window.midnight missing). Install/open Lace.', 'err'); setConnected(false, 'no wallet'); return; }
+  walletMeta = found;
+  log('Wallet found: ' + (found.wallet.name || found.id) + ' (id="' + found.id + '", apiVersion=' + (found.wallet.apiVersion || 'unknown') + ')');
+  try {
+    log('Calling connect("' + NETWORK + '") — approve connection in the wallet popup...');
+    connectedApi = await found.wallet.connect(NETWORK);
+    log('✓ Connected API object RETAINED in memory (balanceUnsealedTransaction / submitTransaction available)', 'ok');
+  } catch (e) { log('✗ connect failed: ' + errMsg(e), 'err'); setConnected(false, 'connect rejected'); return; }
+
+  try {
+    const status = await connectedApi.getConnectionStatus();
+    if (status.status !== 'connected') { log('✗ Connection status: ' + status.status, 'err'); setConnected(false, 'not connected'); return; }
+    log('✓ Connection status: connected, networkId=' + status.networkId, 'ok');
+    if (status.networkId !== NETWORK) { log('✗ Wallet is on ' + status.networkId + ', but BridgeGuard uses ' + NETWORK + '.', 'err'); setConnected(false, 'wrong network'); return; }
+  } catch (e) { log('⚠ getConnectionStatus failed: ' + errMsg(e), 'warn'); }
+
+  try {
+    const addr = await connectedApi.getUnshieldedAddress();
+    log('✓ Unshielded address: ' + addr.unshieldedAddress, 'ok');
+  } catch (e) { log('⚠ getUnshieldedAddress failed: ' + errMsg(e), 'warn'); }
+
+  setConnected(true, '');
+  await refreshBalances();
+  await loadBridges();
+}
+
+async function refreshBalances() {
+  if (!connectedApi) { log('Connect first.', 'err'); return; }
+  const $r = $('readiness');
+  try {
+    const [unshielded, dust, shielded] = await Promise.all([
+      connectedApi.getUnshieldedBalances(),
+      connectedApi.getDustBalance(),
+      connectedApi.getShieldedBalances(),
+    ]);
+    const tNight = BigInt(unshielded[NATIVE_TOKEN_RAW] ?? 0n);
+    const dustOk = BigInt(dust.balance) > 0n;
+    const tnOk = tNight > 0n;
+    $r.innerHTML =
+      '<div class="row"><div>tNIGHT (unshielded): <b>' + fmt(tNight) + '</b> <span class="badge ' + (tnOk ? 'ok' : 'bad') + '">' + (tnOk ? 'OK' : 'MISSING') + '</span></div>' +
+      '<div>DUST balance: <b>' + fmt(dust.balance) + '</b> (cap ' + fmt(dust.cap) + ') <span class="badge ' + (dustOk ? 'ok' : 'warn') + '">' + (dustOk ? 'OK' : 'NO DUST') + '</span></div></div>' +
+      '<p class="small">Shielded token types: ' + (Object.keys(shielded).length || 0) + '. Other unshielded token types: ' + Object.keys(unshielded).filter(k => k !== NATIVE_TOKEN_RAW).length + '.</p>';
+    log('Balances → tNIGHT=' + fmt(tNight) + ', DUST=' + fmt(dust.balance) + ' (cap ' + fmt(dust.cap) + ')' + (dustOk ? '' : '  ⚠ NO DUST — fee payment will fail unless tNIGHT UTXOs are registered for dust generation.'));
+    if (!dustOk) log('Hint: in Lace, register/convert some tNIGHT so DUST can be generated (or top up DUST).', 'dim');
+    if (!tnOk) log('⚠ No tNIGHT in this wallet — cannot pay fees on ' + NETWORK + '. Fund it first.', 'warn');
+  } catch (e) { log('⚠ balance query failed: ' + errMsg(e), 'warn'); }
+}
+
+async function loadBridges() {
+  const sel = $('bridgeId');
+  sel.innerHTML = '<option value="">loading…</option>';
+  try {
+    const res = await (await fetch('/api/state')).json();
+    const bridges = (res && res.ledger && res.ledger.bridges) || [];
+    if (!bridges.length) { sel.innerHTML = '<option value="">no bridges registered yet</option>'; return; }
+    sel.innerHTML = '';
+    for (const b of bridges) {
+      const opt = document.createElement('option');
+      opt.value = b.id;
+      opt.textContent = '#' + b.id + ' ' + b.name + ' (tvl ' + fmt(b.tvl) + ', ' + b.statusLabel + ')';
+      sel.appendChild(opt);
+    }
+    log('Loaded ' + bridges.length + ' registered bridge(s) from /api/state (contract ' + res.contractAddress.slice(0, 16) + '…).', 'dim');
+  } catch (e) { sel.innerHTML = '<option value="">error loading bridges</option>'; log('⚠ /api/state failed: ' + errMsg(e), 'warn'); }
+}
+
+async function runPoc() {
+  if (!connectedApi) { log('Connect first.', 'err'); return; }
+  const bridgeId = $('bridgeId').value;
+  if (!bridgeId) { log('Select a test bridge first.', 'err'); return; }
+  const amount = $('amount').value;
+  const maxRisk = $('maxRisk').value;
+  const intel = $('intel').value;
+  const runBtn = $('runBtn');
+  runBtn.disabled = true;
+
+  try {
+    log('');
+    log('══════════ RUN POC: evaluateBridge via Lace ══════════', 'step');
+
+    // ── Steps 1-3: backend creates + proves + serializes ─────────────────
+    log('→ POST /api/poc/prepare-evaluate  { bridgeId:' + bridgeId + ', amount:(redacted), maxRisk:(redacted), intel:(redacted) }', 'dim');
+    const prep = await post('/api/poc/prepare-evaluate', { bridgeId, amount, maxRisk, intel });
+    if (prep.error) { log('✗ prepare failed: ' + prep.error, 'err'); return; }
+    log('[1] unproven call tx created on backend (circuit ' + prep.circuit + ', bridgeId ' + prep.bridgeId + ')', 'step');
+    log('[2] proof generated on backend proof server', 'step');
+    log('[3] serialized proven unbound tx (Transaction<SignatureEnabled, Proof, PreBinding>): encoding=' + prep.encoding + ', ' + prep.serializedTxBytes + ' bytes / ' + prep.serializedTxHex.length + ' hex chars', 'step');
+    log('    (amount/maxRisk/intel stay server-side inside the ZK proof — not returned, not logged)', 'dim');
+
+    // ── hintUsage ────────────────────────────────────────────────────────
+    log('→ hintUsage(["balanceUnsealedTransaction","submitTransaction"])');
+    try {
+      await connectedApi.hintUsage(['balanceUnsealedTransaction', 'submitTransaction']);
+      log('✓ hintUsage resolved (wallet granted permission)', 'ok');
+    } catch (e) { log('⚠ hintUsage failed: ' + errMsg(e), 'warn'); }
+
+    // ── Steps 4-5: Lace balances + signs + pays DUST ─────────────────────
+    log('[4] calling balanceUnsealedTransaction(serializedTxHex, { payFees: true }) — approve in Lace', 'step');
+    let balanceRes;
+    try {
+      balanceRes = await connectedApi.balanceUnsealedTransaction(prep.serializedTxHex, { payFees: true });
+      log('[5] ✓ approval obtained; balanced sealed tx returned (' + (balanceRes.tx.length / 2) + ' bytes)', 'ok');
+    } catch (e) {
+      log('[5] ✗ wallet approval rejected/failed: ' + errMsg(e), 'err');
+      log('    If the user rejected, nothing was submitted. Re-run to try again.', 'dim');
+      return;
+    }
+
+    // ── Step 6: Lace submits ─────────────────────────────────────────────
+    log('[6] calling submitTransaction(balancedTx)', 'step');
+    try {
+      await connectedApi.submitTransaction(balanceRes.tx);
+      log('[6] ✓ submitted to the network via Lace', 'ok');
+    } catch (e) {
+      log('[6] ✗ submit failed: ' + errMsg(e), 'err');
+      return;
+    }
+
+    // ── Steps 7-8: backend derives id + indexer confirmation ─────────────
+    log('→ POST /api/poc/finalize  { balancedTxHex: <sealed tx, public> }', 'dim');
+    const fin = await post('/api/poc/finalize', { balancedTxHex: balanceRes.tx });
+    if (fin.error) { log('✗ finalize failed: ' + fin.error, 'err'); return; }
+    log('[7] transaction identifier: ' + fin.txId, 'step');
+    log('[7] transaction hash:       ' + fin.txHash, 'step');
+    if (fin.status === 'pending') {
+      log('[8] ⏳ indexer has not confirmed within 120s (tx may still appear — re-check with the txId above).', 'warn');
+    } else {
+      log('[8] ✓ indexer confirmed: blockHeight=' + fin.blockHeight + ' blockHash=' + fin.blockHash + ' txStatus=' + fin.txStatus, 'ok');
+      log('    The txId/blockHeight should now also appear in Lace transaction history.', 'dim');
+    }
+  } catch (e) {
+    log('✗ POC run error: ' + errMsg(e), 'err');
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+// Surface wallet connection info on load.
+(() => {
+  const found = findWallet();
+  if (found) {
+    $('walletStatus').innerHTML = 'Wallet detected: <span class="badge ok">' + (found.wallet.name || found.id) + '</span> (apiVersion ' + (found.wallet.apiVersion || 'unknown') + '). Press "Connect".';
+  } else {
+    $('walletStatus').innerHTML = 'No Midnight wallet detected. Install/open Lace (or 1AM). <span class="badge bad">offline</span>';
+  }
+})();
+</script>
+</body>
+</html>
