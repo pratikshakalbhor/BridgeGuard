@@ -196,6 +196,32 @@ frontend:
 No private keys, seed phrases, mnemonics, passwords or API secrets are shown
 here or anywhere in this repository's public files.
 
+### Production Deployment (Railway & Vercel)
+
+For production/demo hosting under Level 2, the app is deployed in a decoupled architecture:
+
+#### A. Frontend UI (Vercel)
+* **Hosting:** Deployed as a static single-page app (SPA).
+* **Build Command:** `npm run frontend:build`
+* **Output Directory:** `frontend/dist`
+* **Environment Variables:**
+  * `VITE_API_BASE`: Set to the public HTTP domain of the deployed Railway backend (e.g., `https://bridgeguard-api.railway.app`). Do not enter any wallet seeds or keys here.
+
+#### B. Backend API (Railway)
+* **Hosting:** Deployed as a persistent service container on Railway using the root `Dockerfile`.
+* **Private State Sync:** LevelDB state is kept inside the container.
+* **Environment Variables (Railway Secrets):**
+  * `MIDNIGHT_WALLET_MNEMONIC`: The 24-word recovery phrase for the service wallet on Preview.
+  * `PRIVATE_STATE_PASSWORD`: Encryption key (min 16 chars) to seal the private database on disk.
+  * `MIDNIGHT_CONTRACT_ADDRESS`: The active contract address (`4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec`).
+  * `MIDNIGHT_PROOF_SERVER_URL`: Set to the Railway private internal URL of the proof-server (e.g. `http://proof-server:6300`).
+  * `PORT`: Automatically assigned by Railway.
+  * `NODE_ENV`: `production`
+
+#### C. Proof Server (Railway Private Service)
+* **Hosting:** A separate private container deployed on Railway using the public image `midnightntwrk/proof-server:8.1.0` with the start command `midnight-proof-server -v`.
+* **Port Configuration:** Expose port `6300` internally via private networking. **Do NOT generate a public domain** or expose port `6300` to the internet. The backend connects directly through the secure internal DNS alias (e.g., `http://proof-server:6300`).
+
 ## Smart Contract
 
 The contract lives in `contracts/bridgeguard-v2.compact` and is deployed to
