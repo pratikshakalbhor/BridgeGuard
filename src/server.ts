@@ -164,6 +164,9 @@ let walletCtx: WalletContext | null = null;
 let providers: Awaited<ReturnType<typeof createProviders>> | null = null;
 let deployed: any = null;
 let deploymentAddress = '';
+let isInitializing = true;
+let initError: any = null;
+let lastSyncCheck = 'Not started';
 // Real on-chain transaction ids for the last contract action per bridge, so the
 // UI can show a genuine "last on-chain tx" reference instead of placeholder data.
 const lastTxByBridge = new Map<string, string>();
@@ -415,13 +418,13 @@ async function handlerHealth() {
   // Contract + indexer share one real query path: reading live ledger state.
   let ledgerOk = false;
   try {
-    ledgerOk = (await withTimeout(readLedger(), 4000, null)) !== null;
+    ledgerOk = providers ? ((await withTimeout(readLedger(), 4000, null)) !== null) : false;
   } catch {
     ledgerOk = false;
   }
   services.push({
     name: 'Midnight contract',
-    url: deploymentAddress,
+    url: deploymentAddress || 'unknown',
     healthy: ledgerOk,
     detail: ledgerOk ? 'deployed & serving state' : 'no contract state available',
   });
@@ -433,14 +436,16 @@ async function handlerHealth() {
   });
 
   // Midnight node — the wallet must be able to reach synced state.
-  const nodeOk = await withTimeout(
-    walletCtx!.wallet.waitForSyncedState().then(
-      () => true,
-      () => false,
-    ),
-    4000,
-    false,
-  );
+  const nodeOk = walletCtx
+    ? await withTimeout(
+        walletCtx.wallet.waitForSyncedState().then(
+          () => true,
+          () => false,
+        ),
+        4000,
+        false,
+      )
+    : false;
   services.push({
     name: 'Midnight node',
     url: networkConfig.node,
@@ -468,6 +473,70 @@ async function handlerHealth() {
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
+
+async function initializeBackground() {
+  try {
+    console.log('  [Async Init] Connecting to wallet...');
+    lastSyncCheck = 'Connecting...';
+    walletCtx = await createWallet({ network, networkConfig, seed: SEED });
+
+    console.log('  [Async Init] Syncing with network (this can take several minutes)...');
+    lastSyncCheck = 'Syncing...';
+    await walletCtx.wallet.waitForSyncedState();
+    await persistWalletState(network, walletCtx);
+    lastSyncCheck = 'Synced.';
+    console.log('  ✓ [Async Init] Synced.\n');
+
+    if (network !== 'undeployed') {
+      console.log('  [Async Init] Checking DUST...');
+      const dustState = await Rx.firstValueFrom(walletCtx!.wallet.state().pipe(Rx.filter((s) => s.isSynced)));
+      const unregistered = dustState.unshielded.availableCoins.filter((c: any) => !c.meta?.registeredForDustGeneration);
+      if (unregistered.length > 0) {
+        console.log(`  [Async Init] Registering ${unregistered.length} NIGHT UTXO(s) for DUST generation...`);
+        const recipe = await walletCtx!.wallet.registerNightUtxosForDustGeneration(
+          unregistered,
+          walletCtx!.unshieldedKeystore.getPublicKey(),
+          (payload: Uint8Array) => walletCtx!.unshieldedKeystore.signData(payload),
+        );
+        const finalized = await walletCtx!.wallet.finalizeRecipe(recipe);
+        await walletCtx!.wallet.submitTransaction(finalized);
+      }
+      if (dustState.dust.balance(new Date()) === 0n) {
+        console.log('  [Async Init] Waiting for DUST to be minted...');
+        const dustDeadline = Date.now() + 10 * 60 * 1000;
+        await Rx.firstValueFrom(
+          walletCtx!.wallet.state().pipe(
+            Rx.throttleTime(5000),
+            Rx.filter((s) => s.isSynced),
+            Rx.filter((s) => s.dust.balance(new Date()) > 0n),
+            Rx.takeUntil(Rx.timer(dustDeadline - Date.now())),
+          ),
+        ).catch(() => {
+          console.warn('  ⚠ [Async Init] DUST not yet available — transactions will fail until it is minted.');
+        });
+      }
+      const postDust = await Rx.firstValueFrom(walletCtx!.wallet.state().pipe(Rx.filter((s) => s.isSynced)));
+      console.log(`  ✓ [Async Init] DUST balance: ${postDust.dust.balance(new Date()).toLocaleString()}\n`);
+    }
+
+    console.log('  [Async Init] Setting up providers...');
+    providers = await createProviders(walletCtx!);
+
+    console.log('  [Async Init] Connecting to contract...');
+    deployed = await findDeployedContract(providers, {
+      compiledContract: compiledContract as any,
+      contractAddress: deploymentAddress,
+      privateStateId: PRIVATE_STATE_ID,
+      initialPrivateState: { intel: 0 },
+    });
+    console.log('  ✅ [Async Init] Connected!\n');
+    isInitializing = false;
+  } catch (err: any) {
+    console.error('❌ Background Initialization Failed:', err);
+    initError = err;
+    lastSyncCheck = `Failed: ${err.message || String(err)}`;
+  }
+}
 
 async function main() {
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
@@ -500,66 +569,30 @@ async function main() {
   console.log(`  Contract: ${deploymentAddress}`);
   console.log(`  Network: ${network}\n`);
 
-  console.log('  Connecting to wallet...');
-  walletCtx = await createWallet({ network, networkConfig, seed: SEED });
-
-  console.log('  Syncing with network...');
-  await walletCtx.wallet.waitForSyncedState();
-  await persistWalletState(network, walletCtx);
-  console.log('  ✓ Synced.\n');
-
-  // DUST bootstrap: on public networks (preview/preprod) transactions can only
-  // be submitted once NIGHT UTXOs are registered for dust generation and the
-  // node has minted DUST to the wallet. Mirrors the deploy script so the
-  // long-running server can actually submit register/evaluate/flag transactions.
-  if (network !== 'undeployed') {
-    console.log('  Checking DUST...');
-    const dustState = await Rx.firstValueFrom(walletCtx!.wallet.state().pipe(Rx.filter((s) => s.isSynced)));
-    const unregistered = dustState.unshielded.availableCoins.filter((c: any) => !c.meta?.registeredForDustGeneration);
-    if (unregistered.length > 0) {
-      console.log(`  Registering ${unregistered.length} NIGHT UTXO(s) for DUST generation...`);
-      const recipe = await walletCtx!.wallet.registerNightUtxosForDustGeneration(
-        unregistered,
-        walletCtx!.unshieldedKeystore.getPublicKey(),
-        (payload: Uint8Array) => walletCtx!.unshieldedKeystore.signData(payload),
-      );
-      const finalized = await walletCtx!.wallet.finalizeRecipe(recipe);
-      await walletCtx!.wallet.submitTransaction(finalized);
-    }
-    if (dustState.dust.balance(new Date()) === 0n) {
-      console.log('  Waiting for DUST to be minted...');
-      const dustDeadline = Date.now() + 10 * 60 * 1000;
-      await Rx.firstValueFrom(
-        walletCtx!.wallet.state().pipe(
-          Rx.throttleTime(5000),
-          Rx.filter((s) => s.isSynced),
-          Rx.filter((s) => s.dust.balance(new Date()) > 0n),
-          Rx.takeUntil(Rx.timer(dustDeadline - Date.now())),
-        ),
-      ).catch(() => {
-        console.warn('  ⚠ DUST not yet available — transactions will fail until it is minted.');
-      });
-    }
-    const postDust = await Rx.firstValueFrom(walletCtx!.wallet.state().pipe(Rx.filter((s) => s.isSynced)));
-    console.log(`  ✓ DUST balance: ${postDust.dust.balance(new Date()).toLocaleString()}\n`);
-  }
-
-  console.log('  Setting up providers...');
-  providers = await createProviders(walletCtx!);
-
-  console.log('  Connecting to contract...');
-  deployed = await findDeployedContract(providers, {
-    compiledContract: compiledContract as any,
-    contractAddress: deploymentAddress,
-    privateStateId: PRIVATE_STATE_ID,
-    initialPrivateState: { intel: 0 },
-  });
-  console.log('  ✅ Connected!\n');
-
   const server = http.createServer(async (req: any, res: any) => {
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
       const pathname = url.pathname;
       try {
+        if (req.method === 'GET' && pathname === '/api/health') {
+          const health = await handlerHealth();
+          const allHealthy = health.services.every((s) => s.healthy);
+          return json(res, allHealthy ? 200 : 503, health);
+        }
+
+        if (isInitializing) {
+          if (pathname.startsWith('/api/')) {
+            const statusDetail = initError 
+              ? `Initialization failed: ${initError.message || String(initError)}`
+              : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
+            return json(res, 503, { 
+              error: 'Service unavailable', 
+              detail: statusDetail,
+              initializing: true
+            });
+          }
+          return serveStatic(req, res, pathname);
+        }
+
         if (req.method === 'GET' && pathname === '/api/state') {
           const ledger = await readLedger();
           if (!ledger) return json(res, 503, { error: 'Contract state not available yet' });
@@ -574,11 +607,6 @@ async function main() {
         if (req.method === 'GET' && pathname === '/api/balance') {
           await walletCtx!.wallet.waitForSyncedState();
           return json(res, 200, await currentBalance());
-        }
-        if (req.method === 'GET' && pathname === '/api/health') {
-          const health = await handlerHealth();
-          const allHealthy = health.services.every((s) => s.healthy);
-          return json(res, allHealthy ? 200 : 503, health);
         }
         if (req.method === 'POST' && pathname === '/api/register') {
           const body = await readBody(req);
@@ -626,6 +654,11 @@ async function main() {
   console.log(`  🚀 Server listening on http://0.0.0.0:${PORT}\n`);
   console.log(`  Frontend:  http://0.0.0.0:${PORT}/`);
   console.log(`  API:       http://0.0.0.0:${PORT}/api/state`);
+
+  // Start background sync/initialization
+  initializeBackground().catch((err) => {
+    console.error('Fatal initialization error in background task:', err);
+  });
 
   const shutdown = async () => {
     console.log('\n  Shutting down...');

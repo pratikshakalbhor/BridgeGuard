@@ -154,7 +154,7 @@ export interface ResolveOptions {
   cwd?: string;
 }
 
-export type ResolveSource = 'flag' | 'state' | 'default';
+export type ResolveSource = 'flag' | 'state' | 'env' | 'default';
 
 export interface ResolveResult {
   network: NetworkId;
@@ -191,6 +191,9 @@ export function resolveNetwork(opts: ResolveOptions = {}): ResolveResult {
   if (flag) {
     network = flag;
     source = 'flag';
+  } else if (env.MIDNIGHT_NETWORK && isNetworkId(env.MIDNIGHT_NETWORK)) {
+    network = env.MIDNIGHT_NETWORK;
+    source = 'env';
   } else {
     const state = loadState({ cwd });
     if (state) {
