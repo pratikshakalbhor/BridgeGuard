@@ -533,6 +533,15 @@ async function initializeBackground() {
     isInitializing = false;
   } catch (err: any) {
     console.error('❌ Background Initialization Failed:', err);
+    if (err && typeof err === 'object') {
+      console.dir(err, { depth: null });
+      if (err.cause) {
+        console.error('Underlying cause details:', err.cause);
+        if (typeof err.cause === 'object' && err.cause.cause) {
+          console.error('Core error detail:', err.cause.cause);
+        }
+      }
+    }
     initError = err;
     lastSyncCheck = `Failed: ${err.message || String(err)}`;
   }
