@@ -142,7 +142,7 @@ export function Landing() {
             className="mt-6 animate-fade-up text-xs text-slate-400 dark:text-slate-500"
             style={{ animationDelay: '320ms' }}
           >
-            Zero-knowledge proofs · Midnight Preview · No data leaves your control
+            Zero-knowledge proofs · Midnight Preview · Sensitive inputs stay off-chain.
           </p>
         </div>
 

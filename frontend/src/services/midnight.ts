@@ -12,6 +12,7 @@
 // the real on-chain registry fields so the UI always reflects live data.
 
 import { api } from '@/services/api';
+import { getConnectedApi } from '@/services/wallet';
 import type { Bridge, TxResult } from '@/services/api';
 
 export interface RegisterInput {
@@ -53,6 +54,83 @@ export async function evaluateBridge(payload: {
   walletAddress?: string;
 }) {
   return api.evaluateBridge(payload);
+}
+
+// ─── Wallet-signed evaluation (Phase 0 POC pipeline, ported to React) ─────────
+//
+// Split pipeline proven by poc/poc.html:
+//   backend createUnprovenCallTx → proveTx → serialize (hex)
+//   → wallet balanceUnsealedTransaction (user approval + DUST fee)
+//   → wallet submitTransaction → Preview → backend finalize (indexer watch).
+// The private amount/maxRisk/intel stay inside the ZK proof on the backend;
+// they are never sent to the browser wallet, never logged and never returned.
+
+export type WalletSignStep =
+  | 'prepare'
+  | 'approve'
+  | 'submit'
+  | 'confirm';
+
+export interface WalletEvaluateResult {
+  signing: 'wallet';
+  txId: string;
+  txHash: string;
+  status: 'confirmed' | 'pending';
+  bridgeId: string;
+  blockHeight?: string | null;
+  verdict: string | null;
+  verdictLabel: string | null;
+  within: boolean | null;
+  note?: string;
+}
+
+export async function evaluateBridgeWithWallet(
+  payload: { bridgeId: string; amount: string; maxRisk: number; intel: number },
+  onStep?: (step: WalletSignStep, message: string) => void,
+): Promise<WalletEvaluateResult> {
+  const wallet = getConnectedApi();
+  if (!wallet) {
+    throw new Error('Connect your Midnight wallet first — wallet signing is unavailable.');
+  }
+
+  // Step 1-3 (backend): create unproven call tx, prove, serialize.
+  onStep?.('prepare', 'Backend is creating the unproven call transaction and generating the zero-knowledge proof…');
+  const prep = await api.prepareEvaluate({
+    bridgeId: payload.bridgeId,
+    amount: payload.amount,
+    maxRisk: payload.maxRisk,
+    intel: payload.intel,
+  });
+
+  // Step 4: wallet balances + signs the PUBLIC unbound tx (approval + DUST fee).
+  onStep?.('approve', 'Approve the transaction in your Midnight wallet — the wallet pays the DUST fee.');
+  try {
+    await wallet.hintUsage(['balanceUnsealedTransaction', 'submitTransaction']);
+  } catch {
+    // hintUsage is a permission hint; a failure must not abort the flow.
+  }
+  const balanced = await wallet.balanceUnsealedTransaction(prep.serializedTxHex, { payFees: true });
+
+  // Step 6: wallet submits to the network.
+  onStep?.('submit', 'Submitting the balanced transaction via your wallet…');
+  await wallet.submitTransaction(balanced.tx);
+
+  // Steps 7-8 (backend): derive txId + watch the indexer for confirmation.
+  onStep?.('confirm', 'Watching the indexer for on-chain confirmation…');
+  const fin = await api.finalizeEvaluate({ balancedTxHex: balanced.tx, bridgeId: payload.bridgeId });
+
+  return {
+    signing: 'wallet',
+    txId: fin.txId,
+    txHash: fin.txHash,
+    status: fin.status,
+    bridgeId: payload.bridgeId,
+    blockHeight: fin.blockHeight ?? null,
+    verdict: fin.verdict ?? null,
+    verdictLabel: fin.verdictLabel ?? null,
+    within: fin.within ?? null,
+    note: fin.note,
+  };
 }
 
 /** Flags a bridge with a new on-chain status (0 ACTIVE / 1 FLAGGED / 2 COMPROMISED). */

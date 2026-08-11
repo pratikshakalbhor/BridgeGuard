@@ -88,7 +88,7 @@ export function AppTopbar({ title, subtitle, live, onMenuClick }: AppTopbarProps
               )}
             >
               <span className="size-1.5 rounded-full bg-emerald-400" />
-              Connected
+              {session.walletName}
             </span>
             <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
               {shortAddress(session.address ?? '', 6, 7)}

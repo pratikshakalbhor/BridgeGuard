@@ -9,7 +9,7 @@ interface WalletCardProps {
   network: string;
   contractAddress?: string;
   live?: boolean;
-  laceAddress?: string | null;
+  walletAddress?: string | null;
   onRefresh?: () => void;
 }
 
@@ -20,7 +20,7 @@ export function WalletCard({
   network,
   contractAddress,
   live,
-  laceAddress,
+  walletAddress,
   onRefresh,
 }: WalletCardProps) {
   const copy = async () => {
@@ -106,11 +106,11 @@ export function WalletCard({
               </span>
             </div>
           )}
-          {laceAddress && (
+          {walletAddress && (
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500 dark:text-slate-400">Lace wallet</span>
+              <span className="text-slate-500 dark:text-slate-400">Connected wallet</span>
               <span className="font-mono text-emerald-600 dark:text-emerald-300">
-                {shortAddress(laceAddress, 8, 6)}
+                {shortAddress(walletAddress, 8, 6)}
               </span>
             </div>
           )}

@@ -15,14 +15,16 @@ import { useWallet } from '@/hooks/useWallet';
 import { assessBridge, publicRecommendationFor, type Assessment } from '@/utils/riskEngine';
 import { CHAIN_IDS, chainName } from '@/utils/constants';
 import { cn, fmtCompact, shortAddress } from '@/utils/format';
-import { getSecurityStatus, evaluateBridge } from '@/services/midnight';
+import { getSecurityStatus, evaluateBridge, evaluateBridgeWithWallet } from '@/services/midnight';
+import type { WalletSignStep } from '@/services/midnight';
 import { loadPreferences } from '@/utils/preferences';
 import { TvlSnapshotChart } from '@/components/charts/TvlSnapshotChart';
 import { deriveTvlSnapshot } from '@/utils/deriveData';
+import { LoadingSpinner } from '@/components/LoadingSpinner';
 
 export function BridgeAnalysis() {
   const { state, loading, error: dataError, refresh } = useAppData();
-  const { address: walletAddress } = useWallet();
+  const { address: walletAddress, status: walletStatus, session: walletSession } = useWallet();
   const bridges = state?.ledger.bridges ?? [];
 
   const [srcChain, setSrcChain] = useState('1');
@@ -34,9 +36,21 @@ export function BridgeAnalysis() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Assessment | null>(null);
-  const [txStatus, setTxStatus] = useState<{ txId: string; blockHeight: string; walletAddress?: string | null } | null>(null);
+  const [txStatus, setTxStatus] = useState<{
+    txId: string;
+    blockHeight: string | null;
+    walletAddress?: string | null;
+    status: 'confirmed' | 'pending';
+    signing: 'wallet' | 'server';
+  } | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [justDone, setJustDone] = useState(false);
+  // Who signs the evaluation transaction: the connected Midnight wallet
+  // (POC pipeline: backend proves → wallet balances/signs/pays DUST) or the
+  // backend service wallet (/api/evaluate, kept as the fallback path).
+  const [signingMode, setSigningMode] = useState<'wallet' | 'server'>('wallet');
+  const [walletStep, setWalletStep] = useState<WalletSignStep | null>(null);
+  const [walletStepMessage, setWalletStepMessage] = useState<string | null>(null);
 
   const candidates = useMemo(() => {
     const exact = bridges.filter((b) => b.srcChain === srcChain && b.dstChain === dstChain);
@@ -64,6 +78,8 @@ export function BridgeAnalysis() {
     setTxStatus(null);
     setError(null);
     setJustDone(false);
+    setWalletStep(null);
+    setWalletStepMessage(null);
   }, [srcChain, dstChain, amount, bridgeId, maxRisk, intel]);
 
   const analyze = async () => {
@@ -74,38 +90,94 @@ export function BridgeAnalysis() {
       });
       return;
     }
+    if (signingMode === 'wallet' && walletStatus !== 'connected') {
+      toast.error('Connect your Midnight wallet first', {
+        description: 'Wallet signing needs an active connection — use "Server (fallback)" signing instead.',
+      });
+      return;
+    }
     setRunning(true);
     setError(null);
     setTxStatus(null);
     setResult(null);
     setJustDone(false);
+    setWalletStep(null);
+    setWalletStepMessage(null);
     try {
       const local = assessBridge(bridge, Number(amount) || 0, maxRisk, intel);
-      // Real zero-knowledge evaluation on the Midnight ledger: the backend
-      // feeds the confidential intel into the private state, runs the
-      // evaluateBridge circuit, and discloses only the coarse verdict. The
-      // transaction is attributed to the connected wallet when one is present.
-      const res = await evaluateBridge({
-        bridgeId: bridge.id,
-        amount: String(Number(amount) || 0),
-        maxRisk,
-        intel,
-        walletAddress: walletAddress ?? undefined,
-      });
-      const assessment: Assessment = {
-        ...local,
-        verdict: Number(res.verdict ?? local.verdict),
-        verdictLabel: res.verdictLabel ?? local.verdictLabel,
-        within: res.within ?? local.within,
-      };
-      setTxStatus({ txId: res.txId, blockHeight: res.blockHeight, walletAddress: res.walletAddress ?? walletAddress ?? null });
-      setResult(assessment);
+
+      let txId = '';
+      let blockHeight: string | null = null;
+      let txState: 'confirmed' | 'pending' = 'confirmed';
+      let verdict: number | null = null;
+      let verdictLabel: string | null = null;
+      let within: boolean | null = null;
+
+      if (signingMode === 'wallet') {
+        // Wallet-signed path (Phase 0 POC pipeline): the backend builds the
+        // unproven call tx and generates the ZK proof; the connected wallet
+        // balances, signs and pays the DUST fee; the backend watches the
+        // indexer and reads back the disclosed coarse verdict.
+        const wres = await evaluateBridgeWithWallet(
+          {
+            bridgeId: bridge.id,
+            amount: String(Number(amount) || 0),
+            maxRisk,
+            intel,
+          },
+          (step, message) => {
+            setWalletStep(step);
+            setWalletStepMessage(message);
+          },
+        );
+        txId = wres.txId;
+        blockHeight = wres.blockHeight ?? null;
+        txState = wres.status;
+        verdict = wres.verdict !== null ? Number(wres.verdict) : null;
+        verdictLabel = wres.verdictLabel;
+        within = wres.within;
+      } else {
+        // Server-signed fallback (/api/evaluate): the backend feeds the
+        // confidential intel into the private state, runs the evaluateBridge
+        // circuit, and discloses only the coarse verdict.
+        const res = await evaluateBridge({
+          bridgeId: bridge.id,
+          amount: String(Number(amount) || 0),
+          maxRisk,
+          intel,
+          walletAddress: walletAddress ?? undefined,
+        });
+        txId = res.txId;
+        blockHeight = res.blockHeight;
+        verdict = res.verdict !== null ? Number(res.verdict) : null;
+        verdictLabel = res.verdictLabel;
+        within = res.within;
+      }
+
+      setTxStatus({ txId, blockHeight, walletAddress: walletAddress ?? null, status: txState, signing: signingMode });
+
+      if (txState === 'confirmed') {
+        const assessment: Assessment = {
+          ...local,
+          verdict: verdict ?? local.verdict,
+          verdictLabel: verdictLabel ?? local.verdictLabel,
+          within: within ?? local.within,
+        };
+        setResult(assessment);
+      } else {
+        // Not yet confirmed on the indexer: do not claim a disclosed verdict.
+        setResult(null);
+      }
+
       setJustDone(true);
       setTimeout(() => setJustDone(false), 2200);
       toast.success(
-        `Verdict: ${assessment.verdictLabel}`,
+        signingMode === 'wallet' ? 'Evaluation submitted via your wallet' : `Verdict: ${verdictLabel ?? local.verdictLabel}`,
         {
-          description: `${bridge.name} · tx ${res.txId.slice(0, 10)}…`,
+          description:
+            txState === 'confirmed'
+              ? `${bridge.name} · tx ${txId.slice(0, 10)}…`
+              : `${bridge.name} · submitted, awaiting indexer confirmation (tx ${txId.slice(0, 10)}…)`,
         },
       );
     } catch (err) {
@@ -233,12 +305,53 @@ export function BridgeAnalysis() {
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <Button onClick={analyze} loading={running} disabled={!selectedBridge} size="lg">
               <FiSearch className="size-4" />
-              Analyze bridge
+              {signingMode === 'wallet' ? 'Analyze with my wallet' : 'Analyze (server-signed)'}
             </Button>
+            <div
+              className="flex items-center rounded-xl border border-slate-200 p-1 dark:border-white/[0.07]"
+              role="group"
+              aria-label="Transaction signing"
+            >
+              <button
+                type="button"
+                onClick={() => setSigningMode('wallet')}
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-xs font-medium transition',
+                  signingMode === 'wallet'
+                    ? 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-300'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
+                )}
+              >
+                My wallet
+              </button>
+              <button
+                type="button"
+                onClick={() => setSigningMode('server')}
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-xs font-medium transition',
+                  signingMode === 'server'
+                    ? 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-300'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
+                )}
+              >
+                Server (fallback)
+              </button>
+            </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Submits a zero-knowledge proof transaction; only the coarse verdict becomes public.
+              {signingMode === 'wallet'
+                ? walletStatus === 'connected'
+                  ? `Your ${walletSession?.walletName ?? 'Midnight'} wallet signs the proof transaction on Midnight Preview and pays the DUST fee; only the coarse verdict becomes public.`
+                  : 'Connect your Midnight wallet to sign here — otherwise use the server-signed fallback.'
+                : 'The backend signs the transaction with the service wallet (fallback path).'}
             </p>
           </div>
+
+          {running && signingMode === 'wallet' && walletStep && (
+            <div className="mt-4 flex items-center gap-3 rounded-xl border border-cyan-400/30 bg-cyan-400/5 px-4 py-3 text-xs text-cyan-600 dark:text-cyan-300">
+              <LoadingSpinner className="size-4 shrink-0" />
+              <span>{walletStepMessage ?? 'Processing…'}</span>
+            </div>
+          )}
         </div>
       </section>
 
@@ -255,7 +368,9 @@ export function BridgeAnalysis() {
           >
             <AnimatedSuccess size={36} />
             <p className="text-sm font-semibold text-emerald-500 dark:text-emerald-300">
-              Evaluation complete — proof generated and verdict disclosed.
+              {txStatus?.status === 'pending'
+                ? 'Evaluation submitted — proof generated; waiting for on-chain confirmation.'
+                : 'Evaluation complete — proof generated and verdict disclosed.'}
             </p>
           </motion.div>
         )}
@@ -265,10 +380,14 @@ export function BridgeAnalysis() {
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/5 px-4 py-3 text-xs text-cyan-600 dark:text-cyan-300">
           <span className="flex items-center gap-2">
             <FiCheckCircle className="size-4" />
-            Evaluation transaction confirmed on-chain
+            {txStatus.status === 'pending'
+              ? 'Evaluation transaction submitted — awaiting indexer confirmation'
+              : 'Evaluation transaction confirmed on-chain · Midnight Preview'}
           </span>
           <span className="font-mono">
-            tx {shortAddress(txStatus.txId, 10, 6)} · block {txStatus.blockHeight}
+            tx {shortAddress(txStatus.txId, 10, 6)}
+            {txStatus.blockHeight ? ` · block ${txStatus.blockHeight}` : ' · pending'}
+            {txStatus.signing === 'wallet' ? ' · signed by wallet' : ' · signed by server'}
           </span>
           {txStatus.walletAddress && (
             <span className="font-mono">from {shortAddress(txStatus.walletAddress, 8, 6)}</span>
@@ -292,7 +411,7 @@ export function BridgeAnalysis() {
             )}
           >
             <Badge tone={security?.tone ?? 'neutral'} className="px-3 py-1 text-xs">
-              {security?.label ?? '—'}
+              Bridge Status: {security?.label ?? '—'}
             </Badge>
             <span className="flex items-center gap-2 text-sm font-medium">
               <FiAlertTriangle className="size-4" />
@@ -315,7 +434,7 @@ export function BridgeAnalysis() {
                 <RiskMeter score={result.baseScore} size="lg" label="On-chain risk score" />
               </div>
               <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                <Badge tone={result.tone}>{result.verdictLabel} verdict</Badge>
+                <Badge tone={result.tone}>On-chain Verdict: {result.verdictLabel}</Badge>
                 <Badge tone={result.within ? 'success' : 'critical'}>
                   {result.within ? 'Within tolerance' : 'Exceeds tolerance'}
                 </Badge>

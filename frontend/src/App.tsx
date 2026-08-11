@@ -43,7 +43,7 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
   },
   wallet: {
     title: 'Wallet',
-    subtitle: 'Lace wallet connection and balances',
+    subtitle: 'Midnight wallet connection and balances',
   },
   settings: {
     title: 'Settings',

@@ -365,7 +365,10 @@ async function handlerPocPrepareEvaluate(body: any) {
 }
 
 // Receives the Lace-balanced sealed tx, derives its identifier locally, and
-// watches the indexer for on-chain confirmation (steps 7-8).
+// watches the indexer for on-chain confirmation (steps 7-8). Once confirmed,
+// the disclosed coarse verdict is read back from the ledger (same pattern as
+// handlerEvaluate) so the wallet-signed UI can show the real on-chain verdict
+// without the private amount/tolerance/intel ever leaving this process.
 async function handlerPocFinalize(body: any) {
   const balancedTxHex = String(body.balancedTxHex ?? '').trim();
   if (!/^(?:[0-9a-f]{2})+$/i.test(balancedTxHex)) {
@@ -384,9 +387,37 @@ async function handlerPocFinalize(body: any) {
     120_000,
     null as never,
   );
+
+  const bridgeIdRaw = typeof body.bridgeId === 'string' || typeof body.bridgeId === 'number' ? body.bridgeId : null;
+  const bridgeId = bridgeIdRaw !== null && String(bridgeIdRaw).trim() !== '' ? BigInt(bridgeIdRaw) : null;
+
+  // Read the (public) coarse verdict the proof disclosed, when the tx confirmed
+  // and a bridge was identified.
+  let verdict: string | null = null;
+  let within: boolean | null = null;
+  if (data && bridgeId !== null) {
+    const ledgerState = await readLedger();
+    if (ledgerState && ledgerState.latestVerdicts.member(bridgeId)) {
+      const v = ledgerState.latestVerdicts.lookup(bridgeId);
+      const w = ledgerState.latestWithin.lookup(bridgeId);
+      verdict = v.toString();
+      within = w === true || w === 1n;
+      console.log(`[POC] 8) disclosed verdict read from ledger: verdict=${verdict} within=${within}`);
+    }
+  }
+
   if (!data) {
     console.log('[POC] 8) not confirmed on the indexer within 120s');
-    return { txId, txHash, status: 'pending', note: 'not yet confirmed on the indexer within 120s' };
+    return {
+      txId,
+      txHash,
+      status: 'pending',
+      bridgeId: bridgeId !== null ? bridgeId.toString() : null,
+      verdict,
+      within,
+      verdictLabel: verdict !== null ? VERDICT_LABELS[Number(verdict)] ?? verdict : null,
+      note: 'not yet confirmed on the indexer within 120s',
+    };
   }
   console.log(
     `[POC] 8) confirmed: blockHeight=${data.blockHeight} blockHash=${data.blockHash} txStatus=${String(data.status)}`,
@@ -394,10 +425,15 @@ async function handlerPocFinalize(body: any) {
   return {
     txId,
     txHash,
+    status: 'confirmed',
+    bridgeId: bridgeId !== null ? bridgeId.toString() : null,
     blockHeight: data.blockHeight,
     blockHash: data.blockHash,
     txStatus: String(data.status),
     blockTimestamp: data.blockTimestamp,
+    verdict,
+    within,
+    verdictLabel: verdict !== null ? VERDICT_LABELS[Number(verdict)] ?? verdict : null,
   };
 }
 

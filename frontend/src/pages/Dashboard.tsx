@@ -64,7 +64,7 @@ const EVENT_META: Record<string, { tone: 'cyan' | 'violet' | 'warning' | 'danger
 
 export function Dashboard() {
   const { state, loading, error, refresh } = useAppData();
-  const { address: laceAddress } = useWallet();
+  const { address: connectedAddress } = useWallet();
   const [showAllEvents, setShowAllEvents] = useState(false);
 
   const alerts = useMemo(() => (state ? deriveAlerts(state) : []), [state]);
@@ -206,7 +206,7 @@ export function Dashboard() {
             network={network}
             contractAddress={state.contractAddress}
             live={true}
-            laceAddress={laceAddress}
+            walletAddress={connectedAddress}
             onRefresh={refresh}          />
         </div>
         <MotionCard className="card flex flex-col items-center justify-center p-6">
@@ -462,8 +462,8 @@ export function Dashboard() {
       {/* Wallet icon footnote */}
       <div className="flex items-center gap-2 rounded-xl border border-violet-400/20 bg-violet-400/5 px-4 py-3 text-xs text-violet-600 dark:text-violet-300">
         <Wallet className="size-3.5 shrink-0" />
-        Connect the Lace wallet from the Wallet page to enable on-chain balance reads and
-        contract interactions with live proofs.
+        Connect your Midnight wallet (1AM or Lace) from the Wallet page to enable on-chain
+        balance reads and contract interactions with live proofs.
       </div>
     </div>
   );

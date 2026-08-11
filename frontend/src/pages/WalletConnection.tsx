@@ -19,7 +19,7 @@ export function WalletConnection() {
   const { state, loading, error, refresh } = useAppData();
   const { report: health, refresh: refreshHealth } = useHealth();
   const {
-    session: lace,
+    session: wallet,
     status: walletStatus,
     installed,
     connect: connectWallet,
@@ -33,12 +33,12 @@ export function WalletConnection() {
   const connect = async () => {
     const { session, error: connectError } = await connectWallet();
     if (session) {
-      toast.success('Lace wallet connected', {
+      toast.success(`${session.walletName} wallet connected`, {
         description: `${shortAddress(session.address ?? '', 10, 8)} · ${session.network}`,
       });
     } else {
       toast.error('Could not connect wallet', {
-        description: connectError ?? 'Lace refused the connection.',
+        description: connectError ?? 'The wallet refused the connection.',
       });
     }
   };
@@ -79,7 +79,7 @@ export function WalletConnection() {
             network={state.network}
             contractAddress={state.contractAddress}
             live={true}
-            laceAddress={lace?.address ?? null}
+            walletAddress={wallet?.address ?? null}
             onRefresh={refreshBalance}
           />
         </div>
@@ -95,11 +95,11 @@ export function WalletConnection() {
             <div className="flex items-center gap-2">
               <FiLink className="size-4 text-violet-400" />
               <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Lace wallet
+                Midnight wallet
               </h2>
             </div>
 
-            {lace?.connected ? (
+            {wallet?.connected ? (
               <div className="mt-5 space-y-4">
                 <div className="flex items-center gap-3 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3">
                   <AnimatedSuccess size={34} />
@@ -108,31 +108,37 @@ export function WalletConnection() {
                       Connected
                     </p>
                     <p className="truncate font-mono text-xs text-slate-500 dark:text-slate-400">
-                      {lace.address ? shortAddress(lace.address, 12, 10) : '—'}
+                      {wallet.address ? shortAddress(wallet.address, 12, 10) : '—'}
                     </p>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500 dark:text-slate-400">Wallet</span>
+                    <span className="font-medium text-slate-900 dark:text-white">
+                      {wallet.walletName}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-500 dark:text-slate-400">Network</span>
-                    <span className="font-medium text-slate-900 dark:text-white">{lace.network}</span>
+                    <span className="font-medium text-slate-900 dark:text-white">{wallet.network}</span>
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-500 dark:text-slate-400">Extension detected</span>
-                    <Badge tone={lace.installed ? 'success' : 'warning'}>
-                      {lace.installed ? 'Yes' : 'No'}
+                    <Badge tone={wallet.installed ? 'success' : 'warning'}>
+                      {wallet.installed ? 'Yes' : 'No'}
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-500 dark:text-slate-400">Full address</span>
                     <span className="font-mono text-slate-700 dark:text-slate-200">
-                      {lace.address ? shortAddress(lace.address, 6, 6) : '—'}
+                      {wallet.address ? shortAddress(wallet.address, 6, 6) : '—'}
                     </span>
                   </div>
                 </div>
-                {lace.networkId !== 'preview' && (
+                {wallet.networkId !== 'preview' && (
                   <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-xs text-amber-500 dark:text-amber-300">
-                    The wallet is on {lace.network}, but BridgeGuard AI runs on Midnight Preview.
+                    The wallet is on {wallet.network}, but BridgeGuard AI runs on Midnight Preview.
                     Switch your 1AM / Midnight wallet to the Preview network so contract
                     transactions match the deployed BridgeGuard contract.
                   </div>
@@ -150,18 +156,18 @@ export function WalletConnection() {
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Not connected</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {installed
-                        ? 'Midnight Lace extension detected — ready to connect.'
-                        : 'No Midnight Lace extension found. Install the Midnight Lace wallet to connect your browser wallet.'}
+                        ? 'Midnight wallet extension detected — ready to connect.'
+                        : 'No Midnight wallet extension found. Install 1AM (or another Midnight wallet) to connect.'}
                     </p>
                   </div>
                 </div>
                 <Button onClick={connect} loading={connecting} className="w-full">
                   <FiLink className="size-4" />
-                  {connecting ? 'Connecting…' : 'Connect Lace wallet'}
+                  {connecting ? 'Connecting…' : 'Connect Midnight wallet'}
                 </Button>
-                {lace?.networkId && lace.networkId !== 'preview' && (
+                {wallet?.networkId && wallet.networkId !== 'preview' && (
                   <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-xs text-amber-500 dark:text-amber-300">
-                    The wallet is on {lace.network}, but BridgeGuard AI runs on Midnight Preview.
+                    The wallet is on {wallet.network}, but BridgeGuard AI runs on Midnight Preview.
                     Switch your 1AM / Midnight wallet to the Preview network to send contract
                     transactions.
                   </div>
@@ -245,7 +251,7 @@ export function WalletConnection() {
           <ul className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
             {[
               'BIP-39 wallet derived from a 24-word recovery phrase.',
-              'Lace signs Midnight transactions via the browser extension.',
+              'Your Midnight wallet signs transactions via the browser extension.',
               'Private state is encrypted with a wallet-scoped password in LevelDB.',
               'Only coarse verdicts ever reach the public ledger.',
             ].map((row) => (
@@ -287,7 +293,7 @@ export function WalletConnection() {
 
       <Modal open={disconnectOpen} onClose={() => setDisconnectOpen(false)} title="Disconnect wallet">
         <p className="text-sm text-slate-400">
-          Your Lace session will be removed from this device. Private state stays encrypted
+          Your wallet session will be removed from this device. Private state stays encrypted
           on disk and can be reconnected at any time.
         </p>
         <div className="mt-6 flex justify-end gap-3">

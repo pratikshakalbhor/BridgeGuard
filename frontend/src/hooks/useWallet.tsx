@@ -2,25 +2,25 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react';
 import {
   BRIDGEGUARD_NETWORK_ID,
-  connectLace,
-  disconnectLace,
-  laceInstalled,
-  restoreLaceSession,
-} from '@/services/lace';
-import type { LaceSession } from '@/services/lace';
+  connectWallet,
+  disconnectWallet,
+  walletInstalled,
+  restoreWalletSession,
+} from '@/services/wallet';
+import type { WalletSession } from '@/services/wallet';
 
 export type WalletStatus = 'idle' | 'checking' | 'connecting' | 'connected' | 'error';
 
 export interface WalletConnectResult {
   /** Live session on success, null on failure. */
-  session: LaceSession | null;
+  session: WalletSession | null;
   /** Exact error message from the wallet connect attempt (never a generic stub). */
   error: string | null;
 }
 
 interface WalletValue {
   /** Live session, set only after the wallet actually answered connect(). */
-  session: LaceSession | null;
+  session: WalletSession | null;
   status: WalletStatus;
   error: string | null;
   installed: boolean;
@@ -41,7 +41,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   // wallet authorization popup.
   const networkId = BRIDGEGUARD_NETWORK_ID;
 
-  const [session, setSession] = useState<LaceSession | null>(null);
+  const [session, setSession] = useState<WalletSession | null>(null);
   const [status, setStatus] = useState<WalletStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const attempt = useRef(0);
@@ -49,13 +49,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   // Restore a prior session on load: only claim "connected" after the wallet
   // actually confirms the connection (never trust localStorage alone).
   useEffect(() => {
-    if (!laceInstalled()) return;
-    const stored = restoreLaceSession();
+    if (!walletInstalled()) return;
+    const stored = restoreWalletSession();
     if (!stored) return;
     if (stored.networkId !== networkId) {
       // Stale session persisted on another network — drop it so it can neither
       // fake a connection nor trigger an automatic connect on the wrong network.
-      disconnectLace();
+      disconnectWallet();
       return;
     }
     const run = ++attempt.current;
@@ -67,7 +67,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setSession(null);
       setStatus('idle');
     }, 12_000);
-    connectLace(networkId)
+    connectWallet(networkId)
       .then((fresh) => {
         if (settled || run !== attempt.current) return;
         settled = true;
@@ -93,7 +93,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setStatus('connecting');
     setError(null);
     try {
-      const s = await connectLace(networkId);
+      const s = await connectWallet(networkId);
       setSession(s);
       setStatus('connected');
       return { session: s, error: null };
@@ -109,7 +109,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [networkId]);
 
   const disconnect = useCallback(() => {
-    disconnectLace();
+    disconnectWallet();
     setSession(null);
     setStatus('idle');
     setError(null);
@@ -122,7 +122,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       session,
       status,
       error,
-      installed: laceInstalled(),
+      installed: walletInstalled(),
       address: session?.address ?? null,
       connect,
       disconnect,
