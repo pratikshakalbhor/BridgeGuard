@@ -2,7 +2,7 @@
 
 **Privacy-preserving bridge risk evaluation on the Midnight Preview Testnet.**
 
-BridgeGuard AI is a decentralized bridge risk evaluation system built on the Midnight Network using Compact Smart Contracts, React, TypeScript, and the Midnight.js SDK. Users can evaluate cross-chain bridge risk using public bridge information combined with sensitive user inputs inside a Midnight Zero-Knowledge circuit, and write only a coarse risk verdict to the public ledger — the sensitive inputs stay private, and only the cryptographic proof and coarse verdict go on-chain.
+BridgeGuard AI is a decentralized bridge risk evaluation system built on the Midnight Network using Compact Smart Contracts, React, TypeScript, and the Midnight.js SDK. Users can evaluate cross-chain bridge risk using public bridge information combined with sensitive user inputs inside a Midnight Zero-Knowledge circuit, and write only a coarse risk verdict to the public ledger. Under this model, the backend acts as a trusted prover and sees the private inputs (amount, maxRisk, and intel) during transaction preparation. However, these sensitive inputs remain undisclosed on the public blockchain ledger, and only the coarse verdict and tolerance-fit result are written on-chain as public ledger state.
 
 > **Important:** BridgeGuard AI is **NOT itself a cross-chain bridge.** It does **not** transfer assets from one chain to another. The actual asset transfer is performed by the selected external cross-chain bridge. BridgeGuard AI works as a security / risk-evaluation layer that runs *before* the bridge is used.
 
@@ -188,10 +188,10 @@ Test coverage includes:
 | Smart Contract | ✅ Deployed |
 | Midnight Preview Testnet | ✅ Deployed |
 | Contract Address | `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec` |
-| REST API | ✅ Working |
-| React Frontend | ✅ Working |
-| ZK Proof Generation | ✅ Working |
-| Wallet Integration | ✅ Working |
+| REST API | 🧪 Verified locally / production currently initializing |
+| React Frontend | 🚀 Deployed on Vercel |
+| ZK Proof Generation | 🧪 Verified locally |
+| Wallet Integration | 🧪 Verified on Midnight Preview |
 
 ---
 
@@ -329,7 +329,7 @@ bridgeguard-ai/
 
 ---
 
-## 🔐 Production Deployment (Railway & Vercel)
+## 🔐 Production Deployment (Render & Vercel)
 
 For production/demo hosting under Level 2, the app is deployed in a decoupled architecture:
 
@@ -338,22 +338,22 @@ For production/demo hosting under Level 2, the app is deployed in a decoupled ar
 * **Build Command:** `npm run frontend:build`
 * **Output Directory:** `frontend/dist`
 * **Environment Variables:**
-  * `VITE_API_BASE`: Set to the public HTTP domain of the deployed Railway backend (e.g., `https://bridgeguard-api.railway.app`). Do not enter any wallet seeds or keys here.
+  * `VITE_API_BASE`: Set to the public URL of the deployed Render backend (do not enter any wallet seeds or keys here).
 
-### B. Backend API (Railway)
-* **Hosting:** Deployed as a persistent service container on Railway using the root `Dockerfile`.
+### B. Backend API (Render Web Service)
+* **Hosting:** Deployed as a persistent web service container on Render using the root `Dockerfile`.
 * **Private State Sync:** LevelDB state is kept inside the container.
-* **Environment Variables (Railway Secrets):**
+* **Environment Variables (Render Environment Variables):**
   * `MIDNIGHT_WALLET_MNEMONIC`: The 24-word recovery phrase for the service wallet on Preview.
   * `PRIVATE_STATE_PASSWORD`: Encryption key (min 16 chars) to seal the private database on disk.
   * `MIDNIGHT_CONTRACT_ADDRESS`: The active contract address (`4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec`).
-  * `MIDNIGHT_PROOF_SERVER_URL`: Set to the Railway private internal URL of the proof-server (e.g. `http://proof-server:6300`).
-  * `PORT`: Automatically assigned by Railway.
+  * `MIDNIGHT_PROOF_SERVER_URL`: Set to the Render private/internal URL of the proof server (e.g., `http://proof-server:6300` using the Render internal DNS alias).
+  * `PORT`: Automatically assigned by Render.
   * `NODE_ENV`: `production`
 
-### C. Proof Server (Railway Private Service)
-* **Hosting:** A separate private container deployed on Railway using the public image `midnightntwrk/proof-server:8.1.0` with the start command `midnight-proof-server -v`.
-* **Port Configuration:** Expose port `6300` internally via private networking. **Do NOT generate a public domain** or expose port `6300` to the internet. The backend connects directly through the secure internal DNS alias (e.g., `http://proof-server:6300`).
+### C. Proof Server (Render Private Service)
+* **Hosting:** A separate private service container deployed on Render using the public image `midnightntwrk/proof-server:8.1.0` with the start command `midnight-proof-server -v`.
+* **Port Configuration:** Expose port `6300` internally via private networking. **Do NOT generate a public domain** or expose port `6300` to the internet. The backend connects through the Render private/internal hostname provided by Render.
 
 ---
 
