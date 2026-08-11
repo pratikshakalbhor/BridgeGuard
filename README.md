@@ -400,18 +400,95 @@ plus dedicated privacy-boundary tests asserting that the exact `amount`,
 The automated tests run headless; the live browser test required the real 1AM
 extension and a funded wallet on Midnight Preview.
 
-## Submission / Demo
+# Hackathon Submission Evidence
 
-The demo proves the full verified flow:
+## 1. Compact Contract Compilation
 
-1. The 1AM wallet connects.
-2. Private inputs (amount, risk tolerance, intel) are supplied.
-3. A Midnight ZK evaluation is performed via `evaluateBridge()`.
-4. The user signs the transaction with 1AM.
-5. The DUST fee is paid by the user's wallet.
-6. The transaction is confirmed on Midnight Preview.
-7. The coarse verdict is written to and read from the ledger.
-8. The sensitive inputs are not written to the public ledger.
+The BridgeGuard AI v2 smart contract was successfully compiled using the following command:
+
+```bash
+npm run compile:v2
+```
+
+The v2 Compact contract exposes the following ZK circuits:
+- `registerBridge()`: Registers public bridge metadata and derives its public base risk score.
+- `evaluateBridge()`: Evaluates bridge risk using public bridge data and ZK private parameter inputs, returning a coarse on-chain verdict.
+- `flagBridge()`: Updates the public status of a bridge (e.g. to flagged or compromised) during security incidents.
+
+![Successful Compact compilation of BridgeGuard AI v2, showing the v2 compilation command and exported circuits.](docs/screenshots/01-compact-compile.png)
+
+---
+
+## 2. Midnight Preview Contract Deployment
+
+The project uses the existing deployed BridgeGuard v2 contract on the Midnight Preview network:
+
+* **Network**: Midnight Preview
+* **Deployed Preview Contract Address**: `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec`
+
+![Existing BridgeGuard v2 deployment record for the Midnight Preview network, showing the deployed contract address.](docs/screenshots/02-contract-deployment-address.png)
+
+---
+
+## 3. Successful On-chain evaluateBridge() Execution
+
+An end-to-end, privacy-preserving bridge evaluation was successfully executed on the Midnight Preview network. The transaction was signed and submitted using the connected 1AM wallet, paying the required DUST fees directly from the wallet.
+
+* **Network**: Midnight Preview
+* **Function**: `evaluateBridge()`
+* **Status**: SucceedEntirely
+* **Block**: `371834`
+* **Contract Address**: `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec`
+* **Transaction Hash**: `2584217dd1b08abd1b69064ef7812a48421d452b7a095f3fe2be7bfa7a9100a3`
+* **DUST fee**: `1 speck`
+
+![Successful evaluateBridge() transaction on Midnight Preview, verified through the 1AM Explorer.](docs/screenshots/03-evaluateBridge-onchain.png)
+
+---
+
+## 4. Live Demo
+
+### Live Demo
+
+[Open BridgeGuard AI v2 Demo]([Live Demo URL to be added])
+
+*(Note: Live demo URL is to be provided.)*
+
+---
+
+## 5. Demo Video
+
+The demo video should demonstrate:
+1. Opening the BridgeGuard AI v2 DApp.
+2. Connecting the 1AM wallet.
+3. Showing the connected wallet/address.
+4. Opening Bridge Analysis.
+5. Selecting wallet signing / My wallet.
+6. Running evaluateBridge().
+7. Approving the transaction in 1AM.
+8. Showing the successful transaction confirmation.
+9. Showing the on-chain verdict.
+10. Optionally showing the corresponding transaction in the 1AM Explorer.
+
+Demo video: [To be added]
+
+---
+
+## 6. Evidence Summary Table
+
+| Evidence | Status |
+|---|---|
+| Compact v2 compilation | PASS |
+| Exported circuits: registerBridge, evaluateBridge, flagBridge | PASS |
+| Midnight Preview deployment | PASS |
+| Deployed contract address documented | PASS |
+| 1AM wallet connection | PASS |
+| Wallet-signed evaluateBridge() | PASS |
+| DUST fee paid by wallet | PASS |
+| On-chain transaction confirmation | PASS |
+| ZK private-input evaluation | PASS |
+| On-chain coarse verdict | PASS |
+
 
 ## Important Limitations
 
