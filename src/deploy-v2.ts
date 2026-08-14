@@ -125,14 +125,52 @@ async function main() {
 
   console.log('  Syncing with network...');
   console.log('  ℹ  This may take several minutes depending on network size.');
-  console.log('     RPC disconnection messages during sync are normal and can be safely ignored.\n');
+  console.log('     RPC disconnection messages during sync are normal and can be safely ignored.');
+  console.log('     Sync progress is checkpointed periodically — safe to interrupt (Ctrl+C) and resume.\n');
+
   const syncStart = Date.now();
+  const checkpointIntervalMs = 60_000;
+  let lastCheckpointAt = Date.now();
+  let checkpointInFlight: Promise<void> | null = null;
+  const checkpointWalletState = (reason: string): Promise<void> => {
+    if (checkpointInFlight) return checkpointInFlight;
+    checkpointInFlight = persistWalletState(network, walletCtx).then(() => {
+      const elapsed = Math.round((Date.now() - syncStart) / 1000);
+      process.stdout.write(`\n  💾 Sync checkpoint saved (${reason}) at ${elapsed}s — a restart resumes from here.\n`);
+    });
+    void checkpointInFlight.finally(() => {
+      checkpointInFlight = null;
+    });
+    return checkpointInFlight;
+  };
   const syncInterval = setInterval(() => {
     const elapsed = Math.round((Date.now() - syncStart) / 1000);
     process.stdout.write(`\r  ⏳ Still syncing... (${elapsed}s elapsed)   `);
+    if (Date.now() - lastCheckpointAt >= checkpointIntervalMs) {
+      lastCheckpointAt = Date.now();
+      void checkpointWalletState('periodic');
+    }
   }, 5000);
+  const shutdownDuringSync = async () => {
+    clearInterval(syncInterval);
+    process.stdout.write('\n  💾 Saving sync checkpoint before exit...\n');
+    try {
+      await checkpointWalletState('shutdown');
+      await walletCtx.wallet.stop();
+    } catch (e) {
+      console.error('  Shutdown error:', e);
+    }
+    process.exit(0);
+  };
+  const onSigint = () => void shutdownDuringSync();
+  const onSigterm = () => void shutdownDuringSync();
+  process.once('SIGINT', onSigint);
+  process.once('SIGTERM', onSigterm);
+
   const state = await walletCtx.wallet.waitForSyncedState();
   clearInterval(syncInterval);
+  process.removeListener('SIGINT', onSigint);
+  process.removeListener('SIGTERM', onSigterm);
   process.stdout.write('\r  ✓ Synced with network.                                      \n');
 
   await persistWalletState(network, walletCtx);
