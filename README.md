@@ -129,13 +129,41 @@ This starts the `midnight-proof-server` at `http://127.0.0.1:6300` for local pro
 ### Compile the Smart Contract
 
 ```bash
-npm run compile:v2
+npm run compile
 ```
 
 Exposed circuits:
 * `registerBridge()`
 * `evaluateBridge()`
 * `flagBridge()`
+
+## Compile Verification
+
+The Compact contracts compile successfully using:
+
+```bash
+npm run compile
+```
+
+This compiles both contracts:
+- `contracts/bridgeguard.compact`
+- `contracts/bridgeguard-v2.compact`
+
+The generated compilation artifacts are committed to this repository under:
+- `contracts/managed/`
+  - `bridgeguard/`
+  - `bridgeguard-v2/`
+
+These directories contain the generated ZK circuit artifacts, proving keys, verifying keys, and contract metadata required to verify the compilation output.
+
+A fresh clone can regenerate the same artifacts by running:
+```bash
+npm run compile
+```
+
+### Compile Evidence
+
+![Compact Compilation Success](docs/screenshots/01-compile-success.png)
 
 ### Start the API Server
 
@@ -156,6 +184,24 @@ Then open `http://localhost:5173`.
 ```bash
 npx tsx src/deploy-v2.ts --network preview
 ```
+
+## Deployment Evidence
+
+### Contract Deployment
+
+The BridgeGuard v2 contract is deployed on the Midnight Preview Testnet.
+
+**Contract Address:**
+
+```text
+4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec
+```
+
+**Network:** Midnight Preview Testnet
+
+### Deployment Screenshot
+
+![Midnight Preview Contract Deployment](docs/screenshots/02-contract-deployment-address.png)
 
 ---
 
@@ -216,7 +262,7 @@ Traditional financial verification systems force the user to reveal transaction 
 
 ## 1. Compact Contract Compilation
 
-- **Command**: `npm run compile:v2`
+- **Command**: `npm run compile`
 - **Network**: Midnight Preview
 - **Exported circuits**:
   - `registerBridge()`
@@ -250,7 +296,7 @@ Traditional financial verification systems force the user to reveal transaction 
 ## 4. Evidence Screenshots
 
 - **Compact compilation output**
-  ![Successful Compact compilation of BridgeGuard AI v2, showing the v2 compilation command and exported circuits.](docs/screenshots/01-compact-compile.png)
+  ![Successful Compact compilation of BridgeGuard AI v2, showing the compilation command and exported circuits.](docs/screenshots/01-compile-success.png)
 
 - **Midnight Preview deployment with contract address**
   ![Existing BridgeGuard v2 deployment record for the Midnight Preview network, showing the deployed contract address.](docs/screenshots/02-contract-deployment-address.png)

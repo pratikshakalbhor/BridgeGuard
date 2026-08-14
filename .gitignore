@@ -60,7 +60,7 @@ temp/
 # E2E regression harness artifacts (harness lives at /tmp/opencode/e2e)
 e2e/
 e2e-*/
-screenshots/
+/screenshots/
 shots/
 browser-profiles/
 chrome-user-data*/
