@@ -10,12 +10,12 @@ BridgeGuard AI is a decentralized bridge risk evaluation system built on the Mid
 
 ## 🌐 Live Demo & Midnight Deployments
 
-**Live Demo:** [Open BridgeGuard AI v2](https://bridge-guard-umber.vercel.app/)
+**Live Demo:** [Open BridgeGuard AI v2 Demo](https://bridge-guard-umber.vercel.app/)
 
-| Deployment | Network | Contract Address |
-| --- | --- | --- |
-| **Preview** | Midnight Preview Testnet | `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec` |
-| **Preprod** | Midnight Preprod Testnet | `24cdec3db0408077d9f2b0cd484b29bef5e4c2e0bac4f11d3f5ef24a5e25dc8c` |
+| Level | Network | Contract Address | Purpose |
+| --- | --- | --- | --- |
+| **Level 1** | Midnight Preview | `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec` | Earlier Level 1 deployment |
+| **Level 2** | Midnight Preprod | `24cdec3db0408077d9f2b0cd484b29bef5e4c2e0bac4f11d3f5ef24a5e25dc8c` | Current Level 2 submission |
 
 **Confirmed Preprod deployment transaction:**
 
@@ -48,15 +48,6 @@ BridgeGuard AI evaluates bridge risk using **public bridge information** (TVL, a
 ## 💡 Initial Product Idea
 
 Users who want to move assets across chains need to judge whether a bridge is safe to use. Simply asking a public service "is this transfer risky?" normally means revealing sensitive evaluation inputs: the transfer amount, the user's risk tolerance, and confidential intelligence feeds. BridgeGuard AI solves this by keeping these sensitive inputs off-chain, computing a secure liability/exposure score compared to bridge TVL inside a private ZK circuit, and disclosing only a simple, coarse public verdict tier on-chain.
-
----
-
-## 📜 Contract Address
-
-| Network | Contract Address |
-| --- | --- |
-| **Preview** | `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec` |
-| **Preprod** | `24cdec3db0408077d9f2b0cd484b29bef5e4c2e0bac4f11d3f5ef24a5e25dc8c` |
 
 ---
 
@@ -180,10 +171,6 @@ A fresh clone can regenerate the same artifacts by running:
 npm run compile
 ```
 
-### Compile Evidence
-
-![Compact Compilation Success](docs/screenshots/01-compile-success.png)
-
 ### Start the API Server
 
 ```bash
@@ -206,9 +193,21 @@ npx tsx src/deploy-v2.ts --network preview
 
 ## Deployment Evidence
 
-### Contract Deployment
+### Level 2 Contract Deployment (Current Submission)
 
-The BridgeGuard v2 contract is deployed on the Midnight Preview Testnet.
+The BridgeGuard v2 contract is deployed on the Midnight Preprod Testnet (current Level 2 submission & demo deployment).
+
+**Contract Address:**
+
+```text
+24cdec3db0408077d9f2b0cd484b29bef5e4c2e0bac4f11d3f5ef24a5e25dc8c
+```
+
+**Network:** Midnight Preprod Testnet
+
+### Level 1 Contract Deployment (Earlier/Historical)
+
+The BridgeGuard v2 contract was earlier deployed on the Midnight Preview Testnet (earlier/historical testnet deployment).
 
 **Contract Address:**
 
@@ -217,10 +216,6 @@ The BridgeGuard v2 contract is deployed on the Midnight Preview Testnet.
 ```
 
 **Network:** Midnight Preview Testnet
-
-### Deployment Screenshot
-
-![Midnight Preview Contract Deployment](docs/screenshots/02-contract-deployment-address.png)
 
 ---
 
@@ -253,8 +248,6 @@ Test coverage includes:
 | Smart Contract | ✅ Deployed |
 | Midnight Preview Testnet | ✅ Deployed |
 | Midnight Preprod Testnet | ✅ Deployed |
-| Contract Address (Preview) | `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec` |
-| Contract Address (Preprod) | `24cdec3db0408077d9f2b0cd484b29bef5e4c2e0bac4f11d3f5ef24a5e25dc8c` |
 | REST API | 🧪 Verified locally / production currently initializing |
 | React Frontend | 🚀 Deployed on Vercel |
 | ZK Proof Generation | 🧪 Verified locally |
@@ -293,11 +286,11 @@ Traditional financial verification systems force the user to reveal transaction 
 
 ---
 
-## 2. Midnight Preview Deployment
+## 2. Midnight Preprod Deployment
 
 - **Contract**: **BridgeGuard AI v2**
-- **Network**: **Midnight Preview**
-- **Contract Address**: `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec`
+- **Network**: **Midnight Preprod Testnet**
+- **Contract Address**: `24cdec3db0408077d9f2b0cd484b29bef5e4c2e0bac4f11d3f5ef24a5e25dc8c`
 
 ---
 
@@ -344,7 +337,7 @@ The video will demonstrate:
 6. Successful on-chain confirmation
 7. On-chain verdict
 
-**Demo Video**: [To be added]
+**Demo Video**: []
 
 ---
 
