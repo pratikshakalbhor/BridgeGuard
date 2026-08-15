@@ -16,6 +16,7 @@ import { assessBridge, publicRecommendationFor, type Assessment } from '@/utils/
 import { CHAIN_IDS, chainName } from '@/utils/constants';
 import { cn, fmtCompact, shortAddress } from '@/utils/format';
 import { getSecurityStatus, evaluateBridge, evaluateBridgeWithWallet } from '@/services/midnight';
+import { BRIDGEGUARD_NETWORK_ID, networkLabel } from '@/services/wallet';
 import type { WalletSignStep } from '@/services/midnight';
 import { loadPreferences } from '@/utils/preferences';
 import { TvlSnapshotChart } from '@/components/charts/TvlSnapshotChart';
@@ -340,7 +341,7 @@ export function BridgeAnalysis() {
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {signingMode === 'wallet'
                 ? walletStatus === 'connected'
-                  ? `Your ${walletSession?.walletName ?? 'Midnight'} wallet signs the proof transaction on Midnight Preview and pays the DUST fee; only the coarse verdict becomes public.`
+                  ? `Your ${walletSession?.walletName ?? 'Midnight'} wallet signs the proof transaction on ${networkLabel(BRIDGEGUARD_NETWORK_ID)} and pays the DUST fee; only the coarse verdict becomes public.`
                   : 'Connect your Midnight wallet to sign here — otherwise use the server-signed fallback.'
                 : 'The backend signs the transaction with the service wallet (fallback path).'}
             </p>
@@ -382,7 +383,7 @@ export function BridgeAnalysis() {
             <FiCheckCircle className="size-4" />
             {txStatus.status === 'pending'
               ? 'Evaluation transaction submitted — awaiting indexer confirmation'
-              : 'Evaluation transaction confirmed on-chain · Midnight Preview'}
+              : `Evaluation transaction confirmed on-chain · ${networkLabel(BRIDGEGUARD_NETWORK_ID)}`}
           </span>
           <span className="font-mono">
             tx {shortAddress(txStatus.txId, 10, 6)}

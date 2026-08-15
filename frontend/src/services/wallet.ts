@@ -2,15 +2,17 @@
 //
 // BridgeGuard runs on Midnight. Midnight browser wallets (1AM, Lace) inject the
 // Midnight DApp Connector API (NOT the Cardano CIP-30 API) into the global
-// `window.midnight` object — 1AM under `window.midnight['1am']`, Lace
-// historically under `window.midnight.mnLace` (see the DApp Connector API
-// reference at https://docs.midnight.network/blog/connect-dapp-lace-wallet).
+// `window.midnight` object. Per the DApp Connector spec the API is injected
+// under a UUID key, so wallets are enumerated dynamically and identified by
+// their rdns / display name / capabilities rather than by fixed keys alone
+// (the legacy keys `mnLace` / `lace` / `midnight` are kept only as hints).
 // A regular Cardano Lace wallet (`window.cardano.lace`) is NOT a Midnight
 // wallet and is intentionally not treated as one.
 //
 // The integration is deliberately wallet-neutral: any wallet exposing the
 // standard DApp Connector `connect(networkId) → ConnectedAPI` entry point
-// works, with 1AM preferred when several extensions are installed.
+// works, with Midnight Lace preferred over 1AM when several extensions are
+// installed so the demo always connects the intended wallet.
 //
 // There is deliberately NO demo fallback: without the extension the UI reports
 // the wallet as disconnected rather than fabricating a session.
@@ -44,8 +46,16 @@ export interface WalletSession {
   serviceConfig: WalletServiceConfig | null;
 }
 
-// The BridgeGuard backend runs against Midnight Preview.
-export const BRIDGEGUARD_NETWORK_ID = 'preview';
+// The BridgeGuard backend and contract run on Midnight Preprod. The network is
+// overridable at build time with VITE_NETWORK_ID (e.g. VITE_NETWORK_ID=preview
+// for local testing against the preview deployment); the default is preprod.
+const SUPPORTED_NETWORK_IDS = ['undeployed', 'preview', 'preprod', 'mainnet'] as const;
+
+function resolveNetworkId(value: string | undefined): string {
+  return value && (SUPPORTED_NETWORK_IDS as readonly string[]).includes(value) ? value : 'preprod';
+}
+
+export const BRIDGEGUARD_NETWORK_ID: string = resolveNetworkId(import.meta.env.VITE_NETWORK_ID as string | undefined);
 
 const STORAGE_KEY = 'bridgeguard-wallet-session';
 
@@ -70,27 +80,49 @@ interface FoundWallet {
 }
 
 /**
- * Locate the Midnight wallet injected by the browser wallet extension. Prefers
- * the 1AM wallet (`window.midnight['1am']`), then the legacy Lace injection
- * ids (`mnLace` / `lace` / `midnight`), and otherwise accepts any compatible
- * wallet exposing the DApp Connector `connect` method. When several extensions
- * are installed, the preferred list ensures the wallet the user actually uses
- * (1AM, on Midnight Preview) is the one that gets connected.
+ * Locate the Midnight wallet injected by the browser wallet extension. The
+ * DApp Connector spec injects wallets under `window.midnight` keyed by UUID,
+ * so all entries are enumerated and identified by capability, rdns and
+ * display name rather than by fixed keys alone. Midnight Lace is preferred
+ * over 1AM so the BridgeGuard demo always connects the intended wallet when
+ * several extensions are installed.
  */
 export function findMidnightWallet(): FoundWallet | null {
   if (typeof window === 'undefined' || !window.midnight) return null;
   const entries = Object.entries(window.midnight);
   if (entries.length === 0) return null;
   const compatible = ([, w]: [string, InitialAPI]) =>
-    !!w && typeof w.connect === 'function';
-  for (const key of ['1am', 'mnLace', 'lace', 'midnight']) {
-    const entry = entries.find(([id]) => id === key);
-    if (entry && compatible(entry)) return { id: entry[0], wallet: entry[1] };
-  }
-  for (const entry of entries) {
-    if (compatible(entry)) return { id: entry[0], wallet: entry[1] };
-  }
+    !!w && typeof w === 'object' && typeof w.connect === 'function';
+  const candidates = entries.filter(compatible);
+
+  // Midnight Lace first: identified by rdns/display name, with the legacy
+  // injection ids (`mnLace` / `lace` / `midnight`) kept as fallback hints.
+  const lace = candidates.find(
+    ([id, w]) => isLaceWallet(w) || id === 'mnLace' || id === 'lace' || id === 'midnight',
+  );
+  if (lace) return { id: lace[0], wallet: lace[1] };
+
+  // Then 1AM, identified the same way.
+  const oneAm = candidates.find(([id, w]) => id === '1am' || isOneAmWallet(w));
+  if (oneAm) return { id: oneAm[0], wallet: oneAm[1] };
+
+  // Otherwise accept the first compatible wallet exposed by any extension.
+  if (candidates.length > 0) return { id: candidates[0][0], wallet: candidates[0][1] };
   return null;
+}
+
+/** True when the injected API belongs to the Midnight Lace wallet (by rdns or display name). */
+function isLaceWallet(wallet: InitialAPI): boolean {
+  const rdns = (wallet.rdns ?? '').toLowerCase();
+  const name = (wallet.name ?? '').toLowerCase();
+  return rdns.includes('lace') || name.includes('lace');
+}
+
+/** True when the injected API belongs to the 1AM wallet (by rdns or display name). */
+function isOneAmWallet(wallet: InitialAPI): boolean {
+  const rdns = (wallet.rdns ?? '').toLowerCase();
+  const name = (wallet.name ?? '').toLowerCase();
+  return rdns.includes('1am') || name.includes('1am');
 }
 
 export function walletInstalled(): boolean {
@@ -172,7 +204,7 @@ function buildSession(
 export async function connectWallet(networkId: string = BRIDGEGUARD_NETWORK_ID): Promise<WalletSession> {
   const found = findMidnightWallet();
   if (!found) {
-    throw new Error('No Midnight wallet detected. Open 1AM (or another Midnight wallet extension) first.');
+    throw new Error('No Midnight wallet detected. Open the Midnight Lace wallet (or 1AM) extension first.');
   }
   try {
     const connected = await found.wallet.connect(networkId);

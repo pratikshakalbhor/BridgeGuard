@@ -12,6 +12,7 @@ import { ErrorComponent } from '@/components/ErrorComponent';
 import { useAppData } from '@/hooks/useAppData';
 import { useHealth } from '@/hooks/useHealth';
 import { useWallet } from '@/hooks/useWallet';
+import { BRIDGEGUARD_NETWORK_ID, networkLabel } from '@/services/wallet';
 import { shortAddress } from '@/utils/format';
 import { cn } from '@/utils/format';
 
@@ -136,10 +137,10 @@ export function WalletConnection() {
                     </span>
                   </div>
                 </div>
-                {wallet.networkId !== 'preview' && (
+                {wallet.networkId !== BRIDGEGUARD_NETWORK_ID && (
                   <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-xs text-amber-500 dark:text-amber-300">
-                    The wallet is on {wallet.network}, but BridgeGuard AI runs on Midnight Preview.
-                    Switch your 1AM / Midnight wallet to the Preview network so contract
+                    The wallet is on {wallet.network}, but BridgeGuard AI runs on {networkLabel(BRIDGEGUARD_NETWORK_ID)}.
+                    Switch your Midnight wallet (Lace or 1AM) to the BridgeGuard network so contract
                     transactions match the deployed BridgeGuard contract.
                   </div>
                 )}
@@ -157,7 +158,7 @@ export function WalletConnection() {
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {installed
                         ? 'Midnight wallet extension detected — ready to connect.'
-                        : 'No Midnight wallet extension found. Install 1AM (or another Midnight wallet) to connect.'}
+                        : 'No Midnight wallet extension found. Install the Midnight Lace wallet (or another Midnight wallet) to connect.'}
                     </p>
                   </div>
                 </div>
@@ -165,10 +166,10 @@ export function WalletConnection() {
                   <FiLink className="size-4" />
                   {connecting ? 'Connecting…' : 'Connect Midnight wallet'}
                 </Button>
-                {wallet?.networkId && wallet.networkId !== 'preview' && (
+                {wallet?.networkId && wallet.networkId !== BRIDGEGUARD_NETWORK_ID && (
                   <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-xs text-amber-500 dark:text-amber-300">
-                    The wallet is on {wallet.network}, but BridgeGuard AI runs on Midnight Preview.
-                    Switch your 1AM / Midnight wallet to the Preview network to send contract
+                    The wallet is on {wallet.network}, but BridgeGuard AI runs on {networkLabel(BRIDGEGUARD_NETWORK_ID)}.
+                    Switch your Midnight wallet (Lace or 1AM) to the BridgeGuard network to send contract
                     transactions.
                   </div>
                 )}

@@ -129,7 +129,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           <div className="flex items-center gap-2.5 rounded-xl border border-violet-400/20 bg-violet-400/5 px-3.5 py-3">
             <span className="size-2 animate-pulse rounded-full bg-violet-400" />
             <p className="text-[11px] leading-tight text-slate-500 dark:text-slate-400">
-              Midnight Preview · Zero-knowledge verified
+              Midnight · Zero-knowledge verified
             </p>
           </div>
         </div>

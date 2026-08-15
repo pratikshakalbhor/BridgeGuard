@@ -34,10 +34,11 @@ interface WalletValue {
 const WalletContext = createContext<WalletValue | undefined>(undefined);
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  // The BridgeGuard backend and contract run on Midnight Preview; the browser
-  // wallet must always be requested on that same network. Deriving the network
-  // from transient backend state caused the wallet to be asked for the wrong
-  // network (e.g. "undeployed" from a stale backend), which never produced the
+  // The BridgeGuard backend and contract run on Midnight Preprod (overridable
+  // at build time via VITE_NETWORK_ID); the browser wallet must always be
+  // requested on that same network. Deriving the network from transient
+  // backend state caused the wallet to be asked for the wrong network
+  // (e.g. "undeployed" from a stale backend), which never produced the
   // wallet authorization popup.
   const networkId = BRIDGEGUARD_NETWORK_ID;
 
