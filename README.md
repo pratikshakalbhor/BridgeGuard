@@ -1,10 +1,29 @@
 # BridgeGuard AI v2
 
-**Privacy-preserving bridge risk evaluation on the Midnight Preview Testnet.**
+**Privacy-preserving bridge risk evaluation on the Midnight Network (Preview & Preprod Testnets).**
 
 BridgeGuard AI is a decentralized bridge risk evaluation system built on the Midnight Network using Compact Smart Contracts, React, TypeScript, and the Midnight.js SDK. Users can evaluate cross-chain bridge risk using public bridge information combined with sensitive user inputs inside a Midnight Zero-Knowledge circuit, and write only a coarse risk verdict to the public ledger. Under this model, the backend acts as a trusted prover and sees the private inputs (amount, maxRisk, and intel) during transaction preparation. However, these sensitive inputs remain undisclosed on the public blockchain ledger, and only the coarse verdict and tolerance-fit result are written on-chain as public ledger state.
 
 > **Important:** BridgeGuard AI is **NOT itself a cross-chain bridge.** It does **not** transfer assets from one chain to another. The actual asset transfer is performed by the selected external cross-chain bridge. BridgeGuard AI works as a security / risk-evaluation layer that runs *before* the bridge is used.
+
+---
+
+## 🌐 Live Demo & Midnight Deployments
+
+**Live Demo:** [Open BridgeGuard AI v2](https://bridge-guard-umber.vercel.app/)
+
+| Deployment | Network | Contract Address |
+| --- | --- | --- |
+| **Preview** | Midnight Preview Testnet | `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec` |
+| **Preprod** | Midnight Preprod Testnet | `24cdec3db0408077d9f2b0cd484b29bef5e4c2e0bac4f11d3f5ef24a5e25dc8c` |
+
+**Confirmed Preprod deployment transaction:**
+
+```text
+a2d5d8370fab068fb95780cc40895a99c277a837bdc69a188ed404a8498cce1c
+```
+
+> **Level 2 submission:** The **Midnight Preprod** deployment is the deployment used for the current Level 2 submission/demo. The Midnight Preview deployment remains available as the earlier testnet deployment.
 
 ---
 
@@ -37,7 +56,7 @@ Users who want to move assets across chains need to judge whether a bridge is sa
 | Network | Contract Address |
 | --- | --- |
 | **Preview** | `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec` |
-| **Preprod** | Not deployed |
+| **Preprod** | `24cdec3db0408077d9f2b0cd484b29bef5e4c2e0bac4f11d3f5ef24a5e25dc8c` |
 
 ---
 
@@ -49,7 +68,7 @@ Users who want to move assets across chains need to judge whether a bridge is sa
         ▼
   REST API Server (Node.js) ──▶ 1AM Wallet (Signs and submits)
         │
-        ├─── Midnight JS SDK ──▶ Midnight Preview Network (RPC / Indexer)
+        ├─── Midnight JS SDK ──▶ Midnight Network (RPC / Indexer)
         │                              │
         │                        Compact Smart Contract
         │                        (bridgeguard-v2.compact)
@@ -91,7 +110,7 @@ The `evaluateBridge()` circuit proves that combining the public bridge parameter
 | Layer | Technology |
 | --- | --- |
 | **Smart Contract** | Compact (Midnight DSL v0.23, `contracts/bridgeguard-v2.compact`) |
-| **Blockchain** | Midnight Preview Testnet |
+| **Blockchain** | Midnight Network (Preview & Preprod Testnets) |
 | **Frontend** | React 18 + TypeScript + Vite 6 + Tailwind CSS |
 | **Backend** | Node.js + REST API (`src/server.ts`) |
 | **Wallet** | 1AM Wallet via Midnight DApp Connector API (`window.midnight`) |
@@ -233,7 +252,9 @@ Test coverage includes:
 | --- | --- |
 | Smart Contract | ✅ Deployed |
 | Midnight Preview Testnet | ✅ Deployed |
-| Contract Address | `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec` |
+| Midnight Preprod Testnet | ✅ Deployed |
+| Contract Address (Preview) | `4605c30c84eb05670aea8ae4d247aacf06982383d3f72fa568f2f839f22896ec` |
+| Contract Address (Preprod) | `24cdec3db0408077d9f2b0cd484b29bef5e4c2e0bac4f11d3f5ef24a5e25dc8c` |
 | REST API | 🧪 Verified locally / production currently initializing |
 | React Frontend | 🚀 Deployed on Vercel |
 | ZK Proof Generation | 🧪 Verified locally |
@@ -308,7 +329,7 @@ Traditional financial verification systems force the user to reveal transaction 
 
 ## 5. Live Demo
 
-**Live Demo**: [Open BridgeGuard AI v2 Demo]([Live Demo URL to be added]) (To be added)
+**Live Demo**: [Open BridgeGuard AI v2 Demo](https://bridge-guard-umber.vercel.app/)
 
 ---
 
@@ -417,7 +438,7 @@ For production/demo hosting under Level 2, the app is deployed in a decoupled ar
 * Wire a real confidential incident-intelligence provider to feed the `getRiskIntel` witness automatically.
 * Add a whale-transfer monitoring circuit or an indexer-derived whale feed.
 * Richer indexer-driven analytics: verdict trending, liquidity history, cross-bridge anomaly detection.
-* Deploy to preprod/mainnet using the same `deploy-v2.ts` flow.
+* Deploy to Midnight mainnet using the same `deploy-v2.ts` flow.
 * Optional AI-assisted explanation layer on top of the disclosed verdicts.
 
 ---
