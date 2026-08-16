@@ -11,7 +11,7 @@
 //
 // The integration is deliberately wallet-neutral: any wallet exposing the
 // standard DApp Connector `connect(networkId) → ConnectedAPI` entry point
-// works, with Midnight Lace preferred over 1AM when several extensions are
+// works, with Midnight 1AM preferred over Lace when several extensions are
 // installed so the demo always connects the intended wallet.
 //
 // There is deliberately NO demo fallback: without the extension the UI reports
@@ -83,8 +83,8 @@ interface FoundWallet {
  * Locate the Midnight wallet injected by the browser wallet extension. The
  * DApp Connector spec injects wallets under `window.midnight` keyed by UUID,
  * so all entries are enumerated and identified by capability, rdns and
- * display name rather than by fixed keys alone. Midnight Lace is preferred
- * over 1AM so the BridgeGuard demo always connects the intended wallet when
+ * display name rather than by fixed keys alone. Midnight 1AM is preferred
+ * over Lace so the BridgeGuard demo always connects the intended wallet when
  * several extensions are installed.
  */
 export function findMidnightWallet(): FoundWallet | null {
@@ -95,16 +95,17 @@ export function findMidnightWallet(): FoundWallet | null {
     !!w && typeof w === 'object' && typeof w.connect === 'function';
   const candidates = entries.filter(compatible);
 
-  // Midnight Lace first: identified by rdns/display name, with the legacy
-  // injection ids (`mnLace` / `lace` / `midnight`) kept as fallback hints.
+  // 1AM first: identified by rdns/display name, with the legacy injection id
+  // (`1am`) kept as a fallback hint.
+  const oneAm = candidates.find(([id, w]) => id === '1am' || isOneAmWallet(w));
+  if (oneAm) return { id: oneAm[0], wallet: oneAm[1] };
+
+  // Then Midnight Lace, identified the same way, with the legacy injection ids
+  // (`mnLace` / `lace` / `midnight`) kept as fallback hints.
   const lace = candidates.find(
     ([id, w]) => isLaceWallet(w) || id === 'mnLace' || id === 'lace' || id === 'midnight',
   );
   if (lace) return { id: lace[0], wallet: lace[1] };
-
-  // Then 1AM, identified the same way.
-  const oneAm = candidates.find(([id, w]) => id === '1am' || isOneAmWallet(w));
-  if (oneAm) return { id: oneAm[0], wallet: oneAm[1] };
 
   // Otherwise accept the first compatible wallet exposed by any extension.
   if (candidates.length > 0) return { id: candidates[0][0], wallet: candidates[0][1] };

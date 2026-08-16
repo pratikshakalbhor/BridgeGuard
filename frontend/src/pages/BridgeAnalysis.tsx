@@ -54,13 +54,11 @@ export function BridgeAnalysis() {
   const [walletStepMessage, setWalletStepMessage] = useState<string | null>(null);
 
   const candidates = useMemo(() => {
-    const exact = bridges.filter((b) => b.srcChain === srcChain && b.dstChain === dstChain);
-    if (exact.length > 0) return exact;
-    return bridges.filter((b) => b.srcChain === srcChain || b.dstChain === dstChain);
+    return bridges.filter((b) => b.srcChain === srcChain && b.dstChain === dstChain);
   }, [bridges, srcChain, dstChain]);
 
   const selectedBridge = useMemo(
-    () => candidates.find((b) => b.id === bridgeId) ?? candidates[0] ?? null,
+    () => candidates.find((b) => b.id === bridgeId) ?? null,
     [candidates, bridgeId],
   );
 
@@ -82,6 +80,13 @@ export function BridgeAnalysis() {
     setWalletStep(null);
     setWalletStepMessage(null);
   }, [srcChain, dstChain, amount, bridgeId, maxRisk, intel]);
+
+  // A bridge id only ever refers to bridges of the currently selected route;
+  // drop it when the route changes so the UI never pretends a stale bridge is
+  // selected on the new Source → Destination pair.
+  useEffect(() => {
+    setBridgeId('');
+  }, [srcChain, dstChain]);
 
   const analyze = async () => {
     const bridge = selectedBridge;
@@ -256,18 +261,24 @@ export function BridgeAnalysis() {
               <span className="label">Bridge on route</span>
               <select
                 className="input"
-                value={selectedBridge?.id ?? ''}
+                value={bridgeId}
                 onChange={(e) => setBridgeId(e.target.value)}
                 disabled={candidates.length === 0}
+                aria-disabled={candidates.length === 0}
               >
                 {candidates.length === 0 ? (
-                  <option value="">No bridge on this route</option>
+                  <option value="">No bridge registered for this route</option>
                 ) : (
-                  candidates.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
+                  <>
+                    <option value="" disabled>
+                      Select a bridge…
                     </option>
-                  ))
+                    {candidates.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </>
                 )}
               </select>
             </label>
@@ -304,7 +315,16 @@ export function BridgeAnalysis() {
           </div>
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <Button onClick={analyze} loading={running} disabled={!selectedBridge} size="lg">
+            <Button
+              onClick={analyze}
+              loading={running}
+              disabled={
+                !selectedBridge ||
+                running ||
+                (signingMode === 'wallet' && walletStatus !== 'connected')
+              }
+              size="lg"
+            >
               <FiSearch className="size-4" />
               {signingMode === 'wallet' ? 'Analyze with my wallet' : 'Analyze (server-signed)'}
             </Button>
