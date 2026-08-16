@@ -112,6 +112,48 @@ export function findMidnightWallet(): FoundWallet | null {
   return null;
 }
 
+export interface WalletOption {
+  /** Injection key under `window.midnight` (e.g. "1am", "mnLace"). */
+  id: string;
+  /** Display name reported by the wallet extension (e.g. "1AM", "Lace"). */
+  name: string;
+  /** Reverse-DNS identifier reported by the wallet, if any. */
+  rdns: string | null;
+}
+
+/**
+ * Enumerate EVERY compatible Midnight wallet injected under `window.midnight`
+ * (not just the preferred one) so the UI can let the user choose. Ordering is
+ * stable: 1AM first, then Lace, then any other compatible extension.
+ */
+export function listMidnightWallets(): WalletOption[] {
+  if (typeof window === 'undefined' || !window.midnight) return [];
+  const entries = Object.entries(window.midnight) as [string, InitialAPI][];
+  const compatible = ([, w]: [string, InitialAPI]) =>
+    !!w && typeof w === 'object' && typeof w.connect === 'function';
+  const rank = ([id, w]: [string, InitialAPI]) => {
+    if (id === '1am' || isOneAmWallet(w)) return 0;
+    if (id === 'mnLace' || id === 'lace' || id === 'midnight' || isLaceWallet(w)) return 1;
+    return 2;
+  };
+  return entries
+    .filter(compatible)
+    .sort((a, b) => rank(a) - rank(b))
+    .map(([id, w]) => ({
+      id,
+      name: w.name ?? DISPLAY_NAMES[id] ?? id,
+      rdns: w.rdns ?? null,
+    }));
+}
+
+/** Locate a specific injected wallet by its `window.midnight` injection key. */
+export function findMidnightWalletById(id: string): FoundWallet | null {
+  if (typeof window === 'undefined' || !window.midnight) return null;
+  const wallet = window.midnight[id] as InitialAPI | undefined;
+  if (!wallet || typeof wallet !== 'object' || typeof wallet.connect !== 'function') return null;
+  return { id, wallet };
+}
+
 /** True when the injected API belongs to the Midnight Lace wallet (by rdns or display name). */
 function isLaceWallet(wallet: InitialAPI): boolean {
   const rdns = (wallet.rdns ?? '').toLowerCase();
@@ -200,10 +242,15 @@ function buildSession(
 
 /**
  * Connect to the injected Midnight wallet for the given network via the
- * standard DApp Connector `connect(networkId)` entry point. Throws on failure.
+ * standard DApp Connector `connect(networkId)` entry point. When `walletId`
+ * is given the connection targets that specific injected wallet; otherwise
+ * the preferred wallet (1AM first, then Lace) is used. Throws on failure.
  */
-export async function connectWallet(networkId: string = BRIDGEGUARD_NETWORK_ID): Promise<WalletSession> {
-  const found = findMidnightWallet();
+export async function connectWallet(
+  networkId: string = BRIDGEGUARD_NETWORK_ID,
+  walletId?: string,
+): Promise<WalletSession> {
+  const found = walletId ? findMidnightWalletById(walletId) : findMidnightWallet();
   if (!found) {
     throw new Error('No Midnight wallet detected. Open the Midnight Lace wallet (or 1AM) extension first.');
   }

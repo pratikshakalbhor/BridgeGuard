@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { FiX } from 'react-icons/fi';
 import { backdropVariants, modalVariants } from '@/lib/motion';
@@ -11,9 +12,16 @@ interface ModalProps {
   maxWidth?: string;
 }
 
-/** Accessible, animated modal with backdrop blur and spring entrance. */
+/**
+ * Accessible, animated modal with backdrop blur and spring entrance.
+ *
+ * The overlay is rendered in a portal to `document.body`: an ancestor with a
+ * `filter`/`backdrop-filter`/`transform` (e.g. the app topbar's backdrop blur,
+ * or the route transition wrapper) would otherwise become the containing block
+ * of the `position: fixed` overlay and clip the dialog content.
+ */
 export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' }: ModalProps) {
-  return (
+  return createPortal(
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto p-4">
@@ -51,6 +59,7 @@ export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' }:
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

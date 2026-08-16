@@ -4,10 +4,11 @@ import {
   BRIDGEGUARD_NETWORK_ID,
   connectWallet,
   disconnectWallet,
+  listMidnightWallets,
   walletInstalled,
   restoreWalletSession,
 } from '@/services/wallet';
-import type { WalletSession } from '@/services/wallet';
+import type { WalletOption, WalletSession } from '@/services/wallet';
 
 export type WalletStatus = 'idle' | 'checking' | 'connecting' | 'connected' | 'error';
 
@@ -24,9 +25,12 @@ interface WalletValue {
   status: WalletStatus;
   error: string | null;
   installed: boolean;
+  /** Every compatible Midnight wallet injected under `window.midnight`. */
+  wallets: WalletOption[];
   /** Real unshielded Midnight address, or null while not connected. */
   address: string | null;
-  connect: () => Promise<WalletConnectResult>;
+  /** Connect to a specific wallet (by injection id) or the preferred one. */
+  connect: (walletId?: string) => Promise<WalletConnectResult>;
   disconnect: () => void;
   clearError: () => void;
 }
@@ -41,6 +45,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   // (e.g. "undeployed" from a stale backend), which never produced the
   // wallet authorization popup.
   const networkId = BRIDGEGUARD_NETWORK_ID;
+
+  // Wallet extensions are injected once at page load, so the option list is
+  // stable for the lifetime of the app.
+  const wallets = useMemo(() => listMidnightWallets(), []);
 
   const [session, setSession] = useState<WalletSession | null>(null);
   const [status, setStatus] = useState<WalletStatus>('idle');
@@ -90,11 +98,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     };
   }, [networkId]);
 
-  const connect = useCallback(async (): Promise<WalletConnectResult> => {
+  const connect = useCallback(async (walletId?: string): Promise<WalletConnectResult> => {
     setStatus('connecting');
     setError(null);
     try {
-      const s = await connectWallet(networkId);
+      const s = await connectWallet(networkId, walletId);
       setSession(s);
       setStatus('connected');
       return { session: s, error: null };
@@ -124,12 +132,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       status,
       error,
       installed: walletInstalled(),
+      wallets,
       address: session?.address ?? null,
       connect,
       disconnect,
       clearError,
     }),
-    [session, status, error, connect, disconnect, clearError],
+    [session, status, error, wallets, connect, disconnect, clearError],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

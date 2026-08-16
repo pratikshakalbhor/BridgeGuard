@@ -1,11 +1,11 @@
-import { useRef } from 'react';
-import { useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { FiLink, FiPower } from 'react-icons/fi';
 import { Menu, Moon, Sun } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
 import { useWallet } from '@/hooks/useWallet';
 import { Button } from '@/components/ui/Button';
+import { WalletSelectModal } from '@/components/WalletSelectModal';
 import { cn, shortAddress } from '@/utils/format';
 
 interface AppTopbarProps {
@@ -17,8 +17,9 @@ interface AppTopbarProps {
 
 export function AppTopbar({ title, subtitle, live, onMenuClick }: AppTopbarProps) {
   const { theme, toggleTheme } = useTheme();
-  const { session, status, error, connect, disconnect } = useWallet();
+  const { session, status, error, wallets, connect, disconnect } = useWallet();
   const connectFromTopbar = useRef(false);
+  const [selectOpen, setSelectOpen] = useState(false);
 
   const connecting = status === 'connecting' || status === 'checking';
   const connected = session?.connected === true && !!session.address;
@@ -31,8 +32,20 @@ export function AppTopbar({ title, subtitle, live, onMenuClick }: AppTopbarProps
   }, [error]);
 
   const handleConnect = async () => {
+    connectFromTopbar.current = false;
+    if (wallets.length > 1) {
+      // Several Midnight wallets are installed — let the user pick one.
+      setSelectOpen(true);
+      return;
+    }
     connectFromTopbar.current = true;
     await connect();
+  };
+
+  const handleSelectWallet = async (walletId: string) => {
+    setSelectOpen(false);
+    connectFromTopbar.current = true;
+    await connect(walletId);
   };
 
   return (
@@ -110,6 +123,8 @@ export function AppTopbar({ title, subtitle, live, onMenuClick }: AppTopbarProps
           </Button>
         )}
       </div>
+
+      <WalletSelectModal open={selectOpen} wallets={wallets} onClose={() => setSelectOpen(false)} onSelect={handleSelectWallet} />
     </header>
   );
 }

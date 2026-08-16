@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { FiCheckCircle, FiLink, FiRefreshCw, FiPower, FiXCircle } from 'react-icons/fi';
 import { WalletCard } from '@/components/WalletCard';
+import { WalletSelectModal } from '@/components/WalletSelectModal';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -23,16 +24,23 @@ export function WalletConnection() {
     session: wallet,
     status: walletStatus,
     installed,
+    wallets,
     connect: connectWallet,
     disconnect,
   } = useWallet();
   const [syncing, setSyncing] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
+  const [selectOpen, setSelectOpen] = useState(false);
 
   const connecting = walletStatus === 'connecting' || walletStatus === 'checking';
 
-  const connect = async () => {
-    const { session, error: connectError } = await connectWallet();
+  const connect = async (walletId?: string) => {
+    if (!walletId && wallets.length > 1) {
+      // Several Midnight wallets are installed — let the user pick one.
+      setSelectOpen(true);
+      return;
+    }
+    const { session, error: connectError } = await connectWallet(walletId);
     if (session) {
       toast.success(`${session.walletName} wallet connected`, {
         description: `${shortAddress(session.address ?? '', 10, 8)} · ${session.network}`,
@@ -162,7 +170,7 @@ export function WalletConnection() {
                     </p>
                   </div>
                 </div>
-                <Button onClick={connect} loading={connecting} className="w-full">
+                <Button onClick={() => connect()} loading={connecting} className="w-full">
                   <FiLink className="size-4" />
                   {connecting ? 'Connecting…' : 'Connect Midnight wallet'}
                 </Button>
@@ -307,6 +315,8 @@ export function WalletConnection() {
           </Button>
         </div>
       </Modal>
+
+      <WalletSelectModal open={selectOpen} wallets={wallets} onClose={() => setSelectOpen(false)} onSelect={connect} />
     </div>
   );
 }
