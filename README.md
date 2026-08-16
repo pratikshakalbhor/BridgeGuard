@@ -39,9 +39,21 @@ BridgeGuard AI evaluates bridge risk using **public bridge information** (TVL, a
 * 🌉 **Bridge Registry**: Register bridges with public security parameters (TVL, audited, incident count).
 * ⚖️ **Private ZK Evaluation**: Run the `evaluateBridge()` circuit to verify if a bridge meets the user's risk tolerance.
 * 🚨 **Incident Prevention**: Allows operators to flag bridges or mark them compromised in real time via the `flagBridge()` circuit.
-* 🌐 **Persistent UI**: React SPA with persistent 1AM Wallet connection via the official Midnight DApp Connector API.
+* 🌐 **Persistent UI**: React SPA with persistent Midnight wallet connection (1AM preferred, Lace supported) via the official Midnight DApp Connector API.
 * ⚡ **Node.js REST API**: Backend API acts as the trusted prover for ZK proof generation.
 * 🧪 **Comprehensive Tests**: 16/16 smart contract simulator tests passing.
+
+---
+
+## 💳 Wallet Integration
+
+BridgeGuard AI connects to Midnight wallets through the official **Midnight DApp Connector API** injected into `window.midnight`. Compatible wallets are detected dynamically by capability, rdns and display name — no single wallet vendor is hard-coded.
+
+For the current **Level 2 Midnight Preprod** testing the wallet selection priority is:
+
+1. **1AM** — preferred when both 1AM and Lace are available.
+2. **Lace** — remains fully supported as a fallback.
+3. **Any other compatible Midnight wallet** — used as a further fallback.
 
 ---
 
@@ -104,7 +116,7 @@ The `evaluateBridge()` circuit proves that combining the public bridge parameter
 | **Blockchain** | Midnight Network (Preview & Preprod Testnets) |
 | **Frontend** | React 18 + TypeScript + Vite 6 + Tailwind CSS |
 | **Backend** | Node.js + REST API (`src/server.ts`) |
-| **Wallet** | 1AM Wallet via Midnight DApp Connector API (`window.midnight`) |
+| **Wallet** | Midnight wallets (1AM preferred, Lace supported) via Midnight DApp Connector API (`window.midnight`) |
 | **ZK Proofs** | Midnight Proof Server (Docker, port 6300) |
 | **Testing** | Vitest (`tests/bridgeguard.test.ts`) |
 
@@ -116,7 +128,7 @@ The `evaluateBridge()` circuit proves that combining the public bridge parameter
 
 * **Node.js** >= 22
 * **Docker Desktop** (with WSL2 integration enabled)
-* **1AM Wallet** browser extension (set to Preview Testnet)
+* **Midnight Wallet (1AM or Lace)** browser extension — 1AM is preferred for the current Level 2 Preprod testing; Lace remains supported as a fallback.
 * **Compact compiler** (from Midnight Developer Hub)
 
 ### Install
@@ -255,13 +267,25 @@ Test coverage includes:
 
 ---
 
+## 🔎 Bridge Analysis
+
+The Bridge Analysis page runs a confidential zero-knowledge evaluation for the selected route. The latest implementation:
+
+- Shows **only bridges matching the exact selected Source → Destination route**.
+- Requires the user to **explicitly select a bridge** — the first bridge is not automatically selected.
+- **Resets the selected bridge** whenever the Source or Destination chain changes.
+- Shows a clear **"No bridge registered for this route"** informational state when the selected route has no registered bridge (this state is not a selectable bridge).
+- Enables **Analyze** only when a bridge is selected and, in wallet-signed mode, the wallet is connected.
+
+---
+
 ## 🔄 Full User Flow
 
-1. **Connect Wallet** — Connect the 1AM Wallet (Preview Testnet) in the UI.
+1. **Connect Wallet** — Connect a Midnight wallet (1AM preferred on Preprod, Lace supported) in the UI.
 2. **Select Bridge** — Select a registered bridge route from the public registry.
 3. **Risk Evaluation** — Input transfer amount, maximum risk tolerance, and private intel.
 4. **Generate Proof** — The backend prepares the unsealed transaction and generates the ZK proof using the proof-server.
-5. **Wallet Signing & Fees** — The 1AM Wallet balances the transaction, pays the DUST fee, prompts the user for approval, and submits it to Midnight Preview.
+5. **Wallet Signing & Fees** — The connected Midnight wallet balances the transaction, pays the DUST fee, prompts the user for approval, and submits it to the network.
 6. **On-chain Verdict** — The transaction writes the coarse verdict on-chain and the frontend reads it back for display.
 
 ---
