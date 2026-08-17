@@ -171,10 +171,19 @@ let lastSyncCheck = 'Not started';
 // UI can show a genuine "last on-chain tx" reference instead of placeholder data.
 const lastTxByBridge = new Map<string, string>();
 
+// Standalone public data provider for reading indexer contract state before backend wallet init
+const standalonePublicDataProvider = indexerPublicDataProvider(networkConfig.indexer, networkConfig.indexerWS);
+
 async function readLedger() {
-  const contractState = await providers!.publicDataProvider.queryContractState(deploymentAddress);
-  if (!contractState) return null;
-  return BridgeGuardV2.ledger(contractState.data);
+  try {
+    const dataProvider = providers?.publicDataProvider ?? standalonePublicDataProvider;
+    const contractState = await dataProvider.queryContractState(deploymentAddress);
+    if (!contractState) return null;
+    return BridgeGuardV2.ledger(contractState.data);
+  } catch (err) {
+    console.warn('  ⚠ [readLedger] Error querying contract state from indexer:', err);
+    return null;
+  }
 }
 
 async function currentBalance() {
