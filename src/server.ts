@@ -691,6 +691,28 @@ async function main() {
           return json(res, allHealthy ? 200 : 503, health);
         }
 
+        if (req.method === 'GET' && pathname === '/api/state') {
+          const ledger = await readLedger();
+          if (!ledger) {
+            const statusDetail = initError 
+              ? `Initialization failed: ${initError.message || String(initError)}`
+              : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
+            return json(res, 503, { 
+              error: 'Contract state not available yet', 
+              detail: statusDetail,
+              initializing: isInitializing
+            });
+          }
+          return json(res, 200, {
+            contractAddress: deploymentAddress,
+            network,
+            walletAddress: walletCtx ? walletCtx.unshieldedKeystore.getBech32Address().toString() : null,
+            balance: walletCtx ? await currentBalance().catch(() => ({ tNight: '0', dust: '0' })) : { tNight: '0', dust: '0' },
+            ledger: serializeLedger(ledger),
+            initializing: isInitializing,
+          });
+        }
+
         if (isInitializing) {
           if (pathname.startsWith('/api/')) {
             const statusDetail = initError 
@@ -703,18 +725,6 @@ async function main() {
             });
           }
           return serveStatic(req, res, pathname);
-        }
-
-        if (req.method === 'GET' && pathname === '/api/state') {
-          const ledger = await readLedger();
-          if (!ledger) return json(res, 503, { error: 'Contract state not available yet' });
-          return json(res, 200, {
-            contractAddress: deploymentAddress,
-            network,
-            walletAddress: walletCtx!.unshieldedKeystore.getBech32Address().toString(),
-            balance: await currentBalance(),
-            ledger: serializeLedger(ledger),
-          });
         }
         if (req.method === 'GET' && pathname === '/api/balance') {
           await walletCtx!.wallet.waitForSyncedState();
