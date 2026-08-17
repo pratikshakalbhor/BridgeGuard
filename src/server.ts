@@ -36,7 +36,7 @@ import { Transaction } from '@midnight-ntwrk/ledger-v8';
 globalThis.WebSocket = WebSocket;
 
 import { resolveNetwork, getOrCreateWallet, formatWalletBackupNotice, getDeployment } from './network';
-import { createWallet, persistWalletState, unshieldedToken, type WalletContext, type CreateWalletOptions } from './wallet';
+import { createWallet, persistWalletState, unshieldedToken, type WalletContext } from './wallet';
 import { witnessesV2 } from './witnesses-v2';
 
 const PRIVATE_STATE_ID = 'bridgeGuardPrivateStateV2';
@@ -359,7 +359,7 @@ async function handlerPocPrepareEvaluate(body: any) {
   const serializedTxHex = toHex(provenTx.serialize());
   console.log(
     `[POC] 3) serialized proven unbound tx: encoding=hex bytes=${serializedTxHex.length / 2} hexChars=${serializedTxHex.length} ` +
-      `(Transaction<SignatureEnabled, Proof, PreBinding>)`,
+    `(Transaction<SignatureEnabled, Proof, PreBinding>)`,
   );
   console.log('[POC] 4) handing serialized tx to Lace balanceUnsealedTransaction...');
 
@@ -455,85 +455,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
   ]);
 }
 
-function withTimeoutReject<T>(promise: Promise<T>, ms: number, timeoutMsg: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(timeoutMsg)), ms)),
-  ]);
-}
-
-async function createWalletWithTimeout(opts: CreateWalletOptions, ms: number, timeoutMsg: string): Promise<WalletContext> {
-  let timer: NodeJS.Timeout;
-  let timedOut = false;
-  const walletPromise = createWallet(opts);
-
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      timedOut = true;
-      reject(new Error(timeoutMsg));
-    }, ms);
-  });
-
-  walletPromise.then(
-    async (lateCtx) => {
-      if (timedOut) {
-        console.warn('  [Async Init] Late createWallet resolution after timeout — stopping orphan wallet instance.');
-        try {
-          await lateCtx.wallet.stop();
-        } catch (stopErr) {
-          console.warn('  [Async Init] Error stopping late wallet instance:', stopErr);
-        }
-      }
-    },
-    () => {},
-  );
-
-  try {
-    const ctx = await Promise.race([walletPromise, timeoutPromise]);
-    clearTimeout(timer!);
-    return ctx;
-  } catch (err) {
-    clearTimeout(timer!);
-    throw err;
-  }
-}
-
-function isWalletBackendReady(): boolean {
-  return !isInitializing && walletCtx !== null && providers !== null;
-}
-
-function getWalletNotReadyResponse() {
-  if (isInitializing || (walletCtx === null && retryCount < MAX_INIT_RETRIES)) {
-    const statusDetail = initError
-      ? `Initialization attempt failed, retrying... (${initError.message || String(initError)})`
-      : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
-    return {
-      code: 503,
-      payload: {
-        error: 'Wallet backend is not ready',
-        detail: `Backend wallet is currently initializing or retrying sync with the Midnight network. ${statusDetail}`,
-        status: lastSyncCheck,
-        initializing: true,
-        retrying: retryCount < MAX_INIT_RETRIES,
-      },
-    };
-  } else {
-    const statusDetail = initError
-      ? `Initialization failed: ${initError.message || String(initError)}`
-      : `Wallet initialization failed. Status: ${lastSyncCheck}`;
-    return {
-      code: 503,
-      payload: {
-        error: 'Wallet backend initialization failed',
-        detail: statusDetail,
-        status: lastSyncCheck,
-        initializing: false,
-        retrying: false,
-      },
-    };
-  }
-}
-
 async function handlerHealth() {
   const services: Array<{ name: string; url: string; healthy: boolean; detail: string }> = [
     { name: 'BridgeGuard API', url: `http://localhost:${PORT}`, healthy: true, detail: 'responding' },
@@ -562,13 +483,13 @@ async function handlerHealth() {
   // Midnight node — the wallet must be able to reach synced state.
   const nodeOk = walletCtx
     ? await withTimeout(
-        walletCtx.wallet.waitForSyncedState().then(
-          () => true,
-          () => false,
-        ),
-        4000,
-        false,
-      )
+      walletCtx.wallet.waitForSyncedState().then(
+        () => true,
+        () => false,
+      ),
+      4000,
+      false,
+    )
     : false;
   services.push({
     name: 'Midnight node',
@@ -603,7 +524,7 @@ const MAX_INIT_RETRIES = 15;
 const RETRY_DELAY_MS = 15000;
 
 async function initializeBackground() {
-  if (isInitializing === false && walletCtx !== null && providers !== null) return; // already successfully initialized
+  if (isInitializing === false && walletCtx !== null) return; // already successfully initialized
   isInitializing = true;
 
   try {
@@ -616,24 +537,14 @@ async function initializeBackground() {
       }
       walletCtx = null;
     }
-    providers = null;
-    deployed = null;
 
     console.log(`  [Async Init] Connecting to wallet (Attempt ${retryCount + 1}/${MAX_INIT_RETRIES})...`);
     lastSyncCheck = `Connecting (Attempt ${retryCount + 1})...`;
-    walletCtx = await createWalletWithTimeout(
-      { network, networkConfig, seed: SEED },
-      60_000,
-      `createWallet() timed out after 60s (Attempt ${retryCount + 1}/${MAX_INIT_RETRIES})`,
-    );
+    walletCtx = await createWallet({ network, networkConfig, seed: SEED });
 
     console.log('  [Async Init] Syncing with network (this can take several minutes)...');
     lastSyncCheck = 'Syncing...';
-    await withTimeoutReject(
-      walletCtx.wallet.waitForSyncedState(),
-      120_000,
-      `waitForSyncedState() timed out after 120s (Attempt ${retryCount + 1}/${MAX_INIT_RETRIES})`,
-    );
+    await walletCtx.wallet.waitForSyncedState();
     await persistWalletState(network, walletCtx);
     lastSyncCheck = 'Synced.';
     console.log('  ✓ [Async Init] Synced.\n');
@@ -682,7 +593,6 @@ async function initializeBackground() {
     });
     console.log('  ✅ [Async Init] Connected!\n');
     isInitializing = false;
-    initError = null;
     retryCount = 0; // reset on success
   } catch (err: any) {
     console.error(`❌ Background Initialization Attempt ${retryCount + 1} Failed:`, err);
@@ -695,7 +605,7 @@ async function initializeBackground() {
         }
       }
     }
-    
+
     initError = err;
     lastSyncCheck = `Failed: ${err.message || String(err)}`;
 
@@ -708,21 +618,19 @@ async function initializeBackground() {
       }
       walletCtx = null;
     }
-    providers = null;
-    deployed = null;
+
+    isInitializing = false;
 
     if (retryCount < MAX_INIT_RETRIES - 1) {
       retryCount++;
       const nextDelay = RETRY_DELAY_MS + (retryCount * 5000); // progressive delay to bypass quota rate limits
-      console.log(`  [Async Init] Retrying in ${nextDelay / 1000}s... (Attempt ${retryCount + 1}/${MAX_INIT_RETRIES})`);
-      isInitializing = true;
+      console.log(`  [Async Init] Retrying in ${nextDelay / 1000}s...`);
       setTimeout(() => {
         initializeBackground().catch((retryErr) => {
           console.error('Error starting initialization retry:', retryErr);
         });
       }, nextDelay);
     } else {
-      isInitializing = false;
       console.error('  [Async Init] Max validation/sync retry count limit reached. Stopping.');
     }
   }
@@ -768,176 +676,109 @@ async function main() {
   console.log(`  Proof Server: ${networkConfig.proofServer}\n`);
 
   const server = http.createServer(async (req: any, res: any) => {
-      // Enable CORS for frontend API clients
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    // Enable CORS for frontend API clients
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204, {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        });
-        res.end();
-        return;
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      });
+      res.end();
+      return;
+    }
+
+    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+    const pathname = url.pathname;
+    try {
+      if (req.method === 'GET' && pathname === '/api/health') {
+        const health = await handlerHealth();
+        const allHealthy = health.services.every((s) => s.healthy);
+        return json(res, allHealthy ? 200 : 503, health);
       }
 
-      const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-      const pathname = url.pathname;
-      try {
-        if (req.method === 'GET' && pathname === '/api/health') {
-          const health = await handlerHealth();
-          const allHealthy = health.services.every((s) => s.healthy);
-          return json(res, allHealthy ? 200 : 503, health);
-        }
-
-        if (req.method === 'GET' && pathname === '/api/state') {
-          const ledger = await readLedger();
-          if (!ledger) {
-            const statusDetail = initError 
-              ? `Initialization failed: ${initError.message || String(initError)}`
-              : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
-            return json(res, 503, { 
-              error: 'Contract state not available yet', 
-              detail: statusDetail,
-              initializing: isInitializing
-            });
-          }
-          return json(res, 200, {
-            contractAddress: deploymentAddress,
-            network,
-            walletAddress: walletCtx ? walletCtx.unshieldedKeystore.getBech32Address().toString() : null,
-            balance: walletCtx ? await currentBalance().catch(() => ({ tNight: '0', dust: '0' })) : { tNight: '0', dust: '0' },
-            ledger: serializeLedger(ledger),
-            initializing: isInitializing,
+      if (req.method === 'GET' && pathname === '/api/state') {
+        const ledger = await readLedger();
+        if (!ledger) {
+          const statusDetail = initError
+            ? `Initialization failed: ${initError.message || String(initError)}`
+            : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
+          return json(res, 503, {
+            error: 'Contract state not available yet',
+            detail: statusDetail,
+            initializing: isInitializing
           });
         }
+        return json(res, 200, {
+          contractAddress: deploymentAddress,
+          network,
+          walletAddress: walletCtx ? walletCtx.unshieldedKeystore.getBech32Address().toString() : null,
+          balance: walletCtx ? await currentBalance().catch(() => ({ tNight: '0', dust: '0' })) : { tNight: '0', dust: '0' },
+          ledger: serializeLedger(ledger),
+          initializing: isInitializing,
+        });
+      }
 
-        // Wallet-signed prepare evaluate endpoint (/prepare-evaluate, /api/prepare-evaluate, /api/poc/prepare-evaluate)
-        if (
-          req.method === 'POST' &&
-          (pathname === '/api/poc/prepare-evaluate' ||
-            pathname === '/api/prepare-evaluate' ||
-            pathname === '/prepare-evaluate')
-        ) {
-          if (!isWalletBackendReady()) {
-            const notReady = getWalletNotReadyResponse();
-            return json(res, notReady.code, notReady.payload);
-          }
-          const body = await readBody(req);
-          const result = await handlerPocPrepareEvaluate(body);
-          return json(res, 200, result);
-        }
-
-        // Finalize endpoint (/finalize, /api/finalize, /api/poc/finalize)
-        if (
-          req.method === 'POST' &&
-          (pathname === '/api/poc/finalize' ||
-            pathname === '/api/finalize' ||
-            pathname === '/finalize')
-        ) {
-          const body = await readBody(req);
-          const result = await handlerPocFinalize(body);
-          return json(res, 200, result);
-        }
-
-        if (req.method === 'GET' && pathname === '/api/balance') {
-          if (!isWalletBackendReady()) {
-            const notReady = getWalletNotReadyResponse();
-            return json(res, notReady.code, notReady.payload);
-          }
-          await walletCtx!.wallet.waitForSyncedState();
-          return json(res, 200, await currentBalance());
-        }
-
-        if (req.method === 'POST' && pathname === '/api/register') {
-          if (!isWalletBackendReady() || !deployed) {
-            const notReady = getWalletNotReadyResponse();
-            return json(res, notReady.code, notReady.payload);
-          }
-          const body = await readBody(req);
-          const result = await handlerRegister(body);
-          return json(res, 200, result);
-        }
-
-        if (req.method === 'POST' && pathname === '/api/evaluate') {
-          if (!isWalletBackendReady() || !deployed) {
-            const notReady = getWalletNotReadyResponse();
-            return json(res, notReady.code, notReady.payload);
-          }
-          const body = await readBody(req);
-          const result = await handlerEvaluate(body);
-          return json(res, 200, result);
-        }
-
-        if (req.method === 'POST' && pathname === '/api/flag') {
-          if (!isWalletBackendReady() || !deployed) {
-            const notReady = getWalletNotReadyResponse();
-            return json(res, notReady.code, notReady.payload);
-          }
-          const body = await readBody(req);
-          const result = await handlerFlag(body);
-          return json(res, 200, result);
-        }
-
-        if (isInitializing) {
-          if (pathname.startsWith('/api/')) {
-            const statusDetail = initError 
-              ? `Initialization failed: ${initError.message || String(initError)}`
-              : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
-            return json(res, 503, { 
-              error: 'Service unavailable', 
-              detail: statusDetail,
-              initializing: true
-            });
-          }
-          return serveStatic(req, res, pathname);
-        }
-        if (req.method === 'GET' && pathname === '/api/balance') {
-          await walletCtx!.wallet.waitForSyncedState();
-          return json(res, 200, await currentBalance());
-        }
-        if (req.method === 'POST' && pathname === '/api/register') {
-          const body = await readBody(req);
-          const result = await handlerRegister(body);
-          return json(res, 200, result);
-        }
-        if (req.method === 'POST' && pathname === '/api/evaluate') {
-          const body = await readBody(req);
-          const result = await handlerEvaluate(body);
-          return json(res, 200, result);
-        }
-        if (req.method === 'POST' && pathname === '/api/flag') {
-          const body = await readBody(req);
-          const result = await handlerFlag(body);
-          return json(res, 200, result);
-        }
-        if (req.method === 'POST' && pathname === '/api/poc/prepare-evaluate') {
-          const body = await readBody(req);
-          const result = await handlerPocPrepareEvaluate(body);
-          return json(res, 200, result);
-        }
-        if (req.method === 'POST' && pathname === '/api/poc/finalize') {
-          const body = await readBody(req);
-          const result = await handlerPocFinalize(body);
-          return json(res, 200, result);
-        }
-        if (req.method === 'GET' && pathname === '/poc.html') {
-          const pocFile = path.resolve(__dirname, '..', 'poc', 'poc.html');
-          if (!fs.existsSync(pocFile)) return json(res, 404, { error: 'poc.html not built' });
-          res.writeHead(200, { 'Content-Type': MIME['.html'] });
-          return res.end(fs.readFileSync(pocFile));
-        }
-        if (req.method === 'GET' && pathname.startsWith('/api/')) {
-          return json(res, 404, { error: 'Unknown endpoint' });
+      if (isInitializing) {
+        if (pathname.startsWith('/api/')) {
+          const statusDetail = initError
+            ? `Initialization failed: ${initError.message || String(initError)}`
+            : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
+          return json(res, 503, {
+            error: 'Service unavailable',
+            detail: statusDetail,
+            initializing: true
+          });
         }
         return serveStatic(req, res, pathname);
-      } catch (err: any) {
-        console.error('API Error in server.ts:', err);
-        const msg = err?.message || String(err);
-        return json(res, 500, { error: msg });
       }
+      if (req.method === 'GET' && pathname === '/api/balance') {
+        await walletCtx!.wallet.waitForSyncedState();
+        return json(res, 200, await currentBalance());
+      }
+      if (req.method === 'POST' && pathname === '/api/register') {
+        const body = await readBody(req);
+        const result = await handlerRegister(body);
+        return json(res, 200, result);
+      }
+      if (req.method === 'POST' && pathname === '/api/evaluate') {
+        const body = await readBody(req);
+        const result = await handlerEvaluate(body);
+        return json(res, 200, result);
+      }
+      if (req.method === 'POST' && pathname === '/api/flag') {
+        const body = await readBody(req);
+        const result = await handlerFlag(body);
+        return json(res, 200, result);
+      }
+      if (req.method === 'POST' && pathname === '/api/poc/prepare-evaluate') {
+        const body = await readBody(req);
+        const result = await handlerPocPrepareEvaluate(body);
+        return json(res, 200, result);
+      }
+      if (req.method === 'POST' && pathname === '/api/poc/finalize') {
+        const body = await readBody(req);
+        const result = await handlerPocFinalize(body);
+        return json(res, 200, result);
+      }
+      if (req.method === 'GET' && pathname === '/poc.html') {
+        const pocFile = path.resolve(__dirname, '..', 'poc', 'poc.html');
+        if (!fs.existsSync(pocFile)) return json(res, 404, { error: 'poc.html not built' });
+        res.writeHead(200, { 'Content-Type': MIME['.html'] });
+        return res.end(fs.readFileSync(pocFile));
+      }
+      if (req.method === 'GET' && pathname.startsWith('/api/')) {
+        return json(res, 404, { error: 'Unknown endpoint' });
+      }
+      return serveStatic(req, res, pathname);
+    } catch (err: any) {
+      console.error('API Error in server.ts:', err);
+      const msg = err?.message || String(err);
+      return json(res, 500, { error: msg });
+    }
   });
 
   await new Promise<void>((resolve) => server.listen(PORT, '0.0.0.0', resolve));
