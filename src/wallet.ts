@@ -114,6 +114,11 @@ export async function createWallet(opts: CreateWalletOptions): Promise<WalletCon
     relayURL: new URL(opts.networkConfig.node.replace(/^http/, 'ws')),
     txHistoryStorage: new NoOpTransactionHistoryStorage(),
     costParameters: { additionalFeeOverhead: 300_000_000_000_000n, feeBlocksMargin: 5 },
+    // Public-network catch-up tuning: the SDK defaults (10 events/batch,
+    // 4ms spacing) throttle a fresh preprod sync — which replays the whole
+    // zswap/dust ledger from genesis — to ~2.5k events/s. Larger batches with
+    // no spacing let the first-time sync complete in minutes instead of hours.
+    batchUpdates: { size: 500, timeout: 50, spacing: 0 },
   };
 
   const wallet = await WalletFacade.init({

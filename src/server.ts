@@ -530,6 +530,13 @@ async function initializeBackground() {
   try {
     if (walletCtx) {
       console.log('  [Async Init] Stopping previous wallet instance to release connections...');
+      // Checkpoint partial progress before stopping, so the next attempt
+      // resumes from the last applied index instead of replaying genesis.
+      try {
+        await persistWalletState(network, walletCtx);
+      } catch (cpErr) {
+        console.warn('  [Async Init] Error checkpointing wallet state before stop:', cpErr);
+      }
       try {
         await walletCtx.wallet.stop();
       } catch (stopErr) {
@@ -544,8 +551,46 @@ async function initializeBackground() {
 
     console.log('  [Async Init] Syncing with network (this can take several minutes)...');
     lastSyncCheck = 'Syncing...';
-    await walletCtx.wallet.waitForSyncedState();
-    await persistWalletState(network, walletCtx);
+
+    // A fresh wallet on a public network replays the full ledger from genesis,
+    // which takes minutes and would be lost on failure/restart. Checkpoint the
+    // wallet's sync progress every 60s (same pattern as deploy-v2.ts) so a
+    // retry or instance restart resumes from the saved point. RPC
+    // disconnection messages during sync are normal on public networks and can
+    // be safely ignored — sync data comes from the indexer, not the node.
+    const syncStart = Date.now();
+    const checkpointIntervalMs = 60_000;
+    let lastCheckpointAt = Date.now();
+    let checkpointInFlight: Promise<void> | null = null;
+    const checkpointWalletState = (reason: string): void => {
+      if (!walletCtx || checkpointInFlight) return;
+      checkpointInFlight = persistWalletState(network, walletCtx)
+        .then(() => {
+          const elapsed = Math.round((Date.now() - syncStart) / 1000);
+          console.log(`  💾 Sync checkpoint saved (${reason}) at ${elapsed}s — a retry/restart resumes from here.`);
+        })
+        .catch((err: unknown) => {
+          console.warn('  ⚠ [Async Init] Sync checkpoint failed:', err);
+        })
+        .finally(() => {
+          checkpointInFlight = null;
+        });
+    };
+    const checkpointTimer = setInterval(() => {
+      if (Date.now() - lastCheckpointAt >= checkpointIntervalMs) {
+        lastCheckpointAt = Date.now();
+        checkpointWalletState('periodic');
+      }
+    }, 15_000);
+
+    try {
+      await walletCtx.wallet.waitForSyncedState();
+    } finally {
+      clearInterval(checkpointTimer);
+      const inFlight = checkpointInFlight as Promise<void> | null;
+      if (inFlight) await inFlight.catch(() => {});
+      await persistWalletState(network, walletCtx);
+    }
     lastSyncCheck = 'Synced.';
     console.log('  ✓ [Async Init] Synced.\n');
 
@@ -611,6 +656,13 @@ async function initializeBackground() {
 
     // Stop current wallet instance on failure to ensure we release active ports/WS connections
     if (walletCtx) {
+      // Persist partial sync progress first so the next attempt resumes from
+      // the saved point instead of replaying the ledger from genesis.
+      try {
+        await persistWalletState(network, walletCtx);
+      } catch (cpErr) {
+        console.warn('  [Async Init] Error checkpointing wallet state on failure:', cpErr);
+      }
       try {
         await walletCtx.wallet.stop();
       } catch (stopErr) {
