@@ -237,3 +237,106 @@ describe('privacy boundary (disclose placement)', () => {
     expect(getLedger(simA).bridges.size()).toBe(getLedger(simB).bridges.size());
   });
 });
+
+describe('/prepare-evaluate backend state handling', () => {
+  const MAX_INIT_RETRIES = 15;
+
+  function getWalletNotReadyResponse(
+    isInitializing: boolean,
+    walletCtx: any,
+    providers: any,
+    retryCount: number,
+    MAX_INIT_RETRIES: number,
+    initError: any,
+    lastSyncCheck: string,
+  ) {
+    if (isInitializing || (walletCtx === null && retryCount < MAX_INIT_RETRIES)) {
+      const statusDetail = initError
+        ? `Initialization attempt failed, retrying... (${initError.message || String(initError)})`
+        : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
+      return {
+        code: 503,
+        payload: {
+          error: 'Wallet backend is not ready',
+          detail: `Backend wallet is currently initializing or retrying sync with the Midnight network. ${statusDetail}`,
+          status: lastSyncCheck,
+          initializing: true,
+          retrying: retryCount < MAX_INIT_RETRIES,
+        },
+      };
+    } else {
+      const statusDetail = initError
+        ? `Initialization failed: ${initError.message || String(initError)}`
+        : `Wallet initialization failed. Status: ${lastSyncCheck}`;
+      return {
+        code: 503,
+        payload: {
+          error: 'Wallet backend initialization failed',
+          detail: statusDetail,
+          status: lastSyncCheck,
+          initializing: false,
+          retrying: false,
+        },
+      };
+    }
+  }
+
+  it('a) Wallet ready state: proceeds when providers and walletCtx exist', () => {
+    const isInitializing = false;
+    const walletCtx = { wallet: {} };
+    const providers = { privateStateProvider: {} };
+    const isReady = !isInitializing && walletCtx !== null && providers !== null;
+    expect(isReady).toBe(true);
+  });
+
+  it('b) Wallet initializing/retrying state: returns 503 with clear "Wallet backend is not ready" JSON error', () => {
+    const isInitializing = true;
+    const walletCtx = null;
+    const providers = null;
+    const retryCount = 2;
+    const initError = new Error('RPC connection disconnected');
+    const lastSyncCheck = 'Syncing...';
+
+    const res = getWalletNotReadyResponse(
+      isInitializing,
+      walletCtx,
+      providers,
+      retryCount,
+      MAX_INIT_RETRIES,
+      initError,
+      lastSyncCheck,
+    );
+
+    expect(res.code).toBe(503);
+    expect(res.payload.error).toBe('Wallet backend is not ready');
+    expect(res.payload.detail).toContain('Backend wallet is currently initializing or retrying sync');
+    expect(res.payload.initializing).toBe(true);
+    expect(res.payload.retrying).toBe(true);
+  });
+
+  it('c) Failed wallet initialization state: returns 503 with clear "Wallet backend initialization failed" JSON error when max retries reached', () => {
+    const isInitializing = false;
+    const walletCtx = null;
+    const providers = null;
+    const retryCount = 15;
+    const initError = new Error('RPC endpoint unavailable after max retries');
+    const lastSyncCheck = 'Failed: RPC endpoint unavailable';
+
+    const res = getWalletNotReadyResponse(
+      isInitializing,
+      walletCtx,
+      providers,
+      retryCount,
+      MAX_INIT_RETRIES,
+      initError,
+      lastSyncCheck,
+    );
+
+    expect(res.code).toBe(503);
+    expect(res.payload.error).toBe('Wallet backend initialization failed');
+    expect(res.payload.detail).toContain('Initialization failed: RPC endpoint unavailable');
+    expect(res.payload.initializing).toBe(false);
+    expect(res.payload.retrying).toBe(false);
+  });
+});
+

@@ -36,7 +36,7 @@ import { Transaction } from '@midnight-ntwrk/ledger-v8';
 globalThis.WebSocket = WebSocket;
 
 import { resolveNetwork, getOrCreateWallet, formatWalletBackupNotice, getDeployment } from './network';
-import { createWallet, persistWalletState, unshieldedToken, type WalletContext } from './wallet';
+import { createWallet, persistWalletState, unshieldedToken, type WalletContext, type CreateWalletOptions } from './wallet';
 import { witnessesV2 } from './witnesses-v2';
 
 const PRIVATE_STATE_ID = 'bridgeGuardPrivateStateV2';
@@ -455,6 +455,85 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
   ]);
 }
 
+function withTimeoutReject<T>(promise: Promise<T>, ms: number, timeoutMsg: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(timeoutMsg)), ms)),
+  ]);
+}
+
+async function createWalletWithTimeout(opts: CreateWalletOptions, ms: number, timeoutMsg: string): Promise<WalletContext> {
+  let timer: NodeJS.Timeout;
+  let timedOut = false;
+  const walletPromise = createWallet(opts);
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error(timeoutMsg));
+    }, ms);
+  });
+
+  walletPromise.then(
+    async (lateCtx) => {
+      if (timedOut) {
+        console.warn('  [Async Init] Late createWallet resolution after timeout — stopping orphan wallet instance.');
+        try {
+          await lateCtx.wallet.stop();
+        } catch (stopErr) {
+          console.warn('  [Async Init] Error stopping late wallet instance:', stopErr);
+        }
+      }
+    },
+    () => {},
+  );
+
+  try {
+    const ctx = await Promise.race([walletPromise, timeoutPromise]);
+    clearTimeout(timer!);
+    return ctx;
+  } catch (err) {
+    clearTimeout(timer!);
+    throw err;
+  }
+}
+
+function isWalletBackendReady(): boolean {
+  return !isInitializing && walletCtx !== null && providers !== null;
+}
+
+function getWalletNotReadyResponse() {
+  if (isInitializing || (walletCtx === null && retryCount < MAX_INIT_RETRIES)) {
+    const statusDetail = initError
+      ? `Initialization attempt failed, retrying... (${initError.message || String(initError)})`
+      : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
+    return {
+      code: 503,
+      payload: {
+        error: 'Wallet backend is not ready',
+        detail: `Backend wallet is currently initializing or retrying sync with the Midnight network. ${statusDetail}`,
+        status: lastSyncCheck,
+        initializing: true,
+        retrying: retryCount < MAX_INIT_RETRIES,
+      },
+    };
+  } else {
+    const statusDetail = initError
+      ? `Initialization failed: ${initError.message || String(initError)}`
+      : `Wallet initialization failed. Status: ${lastSyncCheck}`;
+    return {
+      code: 503,
+      payload: {
+        error: 'Wallet backend initialization failed',
+        detail: statusDetail,
+        status: lastSyncCheck,
+        initializing: false,
+        retrying: false,
+      },
+    };
+  }
+}
+
 async function handlerHealth() {
   const services: Array<{ name: string; url: string; healthy: boolean; detail: string }> = [
     { name: 'BridgeGuard API', url: `http://localhost:${PORT}`, healthy: true, detail: 'responding' },
@@ -524,7 +603,7 @@ const MAX_INIT_RETRIES = 15;
 const RETRY_DELAY_MS = 15000;
 
 async function initializeBackground() {
-  if (isInitializing === false && walletCtx !== null) return; // already successfully initialized
+  if (isInitializing === false && walletCtx !== null && providers !== null) return; // already successfully initialized
   isInitializing = true;
 
   try {
@@ -537,14 +616,24 @@ async function initializeBackground() {
       }
       walletCtx = null;
     }
+    providers = null;
+    deployed = null;
 
     console.log(`  [Async Init] Connecting to wallet (Attempt ${retryCount + 1}/${MAX_INIT_RETRIES})...`);
     lastSyncCheck = `Connecting (Attempt ${retryCount + 1})...`;
-    walletCtx = await createWallet({ network, networkConfig, seed: SEED });
+    walletCtx = await createWalletWithTimeout(
+      { network, networkConfig, seed: SEED },
+      60_000,
+      `createWallet() timed out after 60s (Attempt ${retryCount + 1}/${MAX_INIT_RETRIES})`,
+    );
 
     console.log('  [Async Init] Syncing with network (this can take several minutes)...');
     lastSyncCheck = 'Syncing...';
-    await walletCtx.wallet.waitForSyncedState();
+    await withTimeoutReject(
+      walletCtx.wallet.waitForSyncedState(),
+      120_000,
+      `waitForSyncedState() timed out after 120s (Attempt ${retryCount + 1}/${MAX_INIT_RETRIES})`,
+    );
     await persistWalletState(network, walletCtx);
     lastSyncCheck = 'Synced.';
     console.log('  ✓ [Async Init] Synced.\n');
@@ -593,6 +682,7 @@ async function initializeBackground() {
     });
     console.log('  ✅ [Async Init] Connected!\n');
     isInitializing = false;
+    initError = null;
     retryCount = 0; // reset on success
   } catch (err: any) {
     console.error(`❌ Background Initialization Attempt ${retryCount + 1} Failed:`, err);
@@ -618,19 +708,21 @@ async function initializeBackground() {
       }
       walletCtx = null;
     }
-
-    isInitializing = false;
+    providers = null;
+    deployed = null;
 
     if (retryCount < MAX_INIT_RETRIES - 1) {
       retryCount++;
       const nextDelay = RETRY_DELAY_MS + (retryCount * 5000); // progressive delay to bypass quota rate limits
-      console.log(`  [Async Init] Retrying in ${nextDelay / 1000}s...`);
+      console.log(`  [Async Init] Retrying in ${nextDelay / 1000}s... (Attempt ${retryCount + 1}/${MAX_INIT_RETRIES})`);
+      isInitializing = true;
       setTimeout(() => {
         initializeBackground().catch((retryErr) => {
           console.error('Error starting initialization retry:', retryErr);
         });
       }, nextDelay);
     } else {
+      isInitializing = false;
       console.error('  [Async Init] Max validation/sync retry count limit reached. Stopping.');
     }
   }
@@ -720,6 +812,73 @@ async function main() {
             ledger: serializeLedger(ledger),
             initializing: isInitializing,
           });
+        }
+
+        // Wallet-signed prepare evaluate endpoint (/prepare-evaluate, /api/prepare-evaluate, /api/poc/prepare-evaluate)
+        if (
+          req.method === 'POST' &&
+          (pathname === '/api/poc/prepare-evaluate' ||
+            pathname === '/api/prepare-evaluate' ||
+            pathname === '/prepare-evaluate')
+        ) {
+          if (!isWalletBackendReady()) {
+            const notReady = getWalletNotReadyResponse();
+            return json(res, notReady.code, notReady.payload);
+          }
+          const body = await readBody(req);
+          const result = await handlerPocPrepareEvaluate(body);
+          return json(res, 200, result);
+        }
+
+        // Finalize endpoint (/finalize, /api/finalize, /api/poc/finalize)
+        if (
+          req.method === 'POST' &&
+          (pathname === '/api/poc/finalize' ||
+            pathname === '/api/finalize' ||
+            pathname === '/finalize')
+        ) {
+          const body = await readBody(req);
+          const result = await handlerPocFinalize(body);
+          return json(res, 200, result);
+        }
+
+        if (req.method === 'GET' && pathname === '/api/balance') {
+          if (!isWalletBackendReady()) {
+            const notReady = getWalletNotReadyResponse();
+            return json(res, notReady.code, notReady.payload);
+          }
+          await walletCtx!.wallet.waitForSyncedState();
+          return json(res, 200, await currentBalance());
+        }
+
+        if (req.method === 'POST' && pathname === '/api/register') {
+          if (!isWalletBackendReady() || !deployed) {
+            const notReady = getWalletNotReadyResponse();
+            return json(res, notReady.code, notReady.payload);
+          }
+          const body = await readBody(req);
+          const result = await handlerRegister(body);
+          return json(res, 200, result);
+        }
+
+        if (req.method === 'POST' && pathname === '/api/evaluate') {
+          if (!isWalletBackendReady() || !deployed) {
+            const notReady = getWalletNotReadyResponse();
+            return json(res, notReady.code, notReady.payload);
+          }
+          const body = await readBody(req);
+          const result = await handlerEvaluate(body);
+          return json(res, 200, result);
+        }
+
+        if (req.method === 'POST' && pathname === '/api/flag') {
+          if (!isWalletBackendReady() || !deployed) {
+            const notReady = getWalletNotReadyResponse();
+            return json(res, notReady.code, notReady.payload);
+          }
+          const body = await readBody(req);
+          const result = await handlerFlag(body);
+          return json(res, 200, result);
         }
 
         if (isInitializing) {
