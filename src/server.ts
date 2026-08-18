@@ -252,6 +252,30 @@ function json(res: any, code: number, payload: unknown) {
   res.end(body);
 }
 
+// ─── CORS middleware (Node.js equivalent of Express app.use) ──────────────────
+// Single canonical place for all CORS logic.
+// Call applyCors(req, res) as the VERY FIRST line of every request handler so
+// Access-Control-Allow-Origin is present on every response — including errors.
+
+const ALLOWED_ORIGINS = new Set([
+  'https://bridge-guard-umber.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+]);
+
+function applyCors(req: any, res: any): void {
+  const origin = req.headers.origin as string | undefined;
+  // Reflect the exact origin back if whitelisted, otherwise use the primary prod origin.
+  const allowedOrigin = origin && ALLOWED_ORIGINS.has(origin)
+    ? origin
+    : 'https://bridge-guard-umber.vercel.app';
+
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.setHeader('Vary', 'Origin'); // tells CDNs/proxies to cache per-origin
+}
+
 function readBody(req: any): Promise<any> {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -779,28 +803,12 @@ async function main() {
   console.log(`  Proof Server: ${networkConfig.proofServer}\n`);
 
   const server = http.createServer(async (req: any, res: any) => {
-    // ── CORS — set on every response, including preflight ──────────────────────
-    // Always allow the Vercel frontend and local dev origins.
-    // We pass headers explicitly to writeHead() for OPTIONS so they are
-    // guaranteed to be present (res.setHeader() alone can be silently dropped
-    // when writeHead() is called without a headers object on older Node versions).
-    const CORS_HEADERS: Record<string, string> = {
-      'Access-Control-Allow-Origin': 'https://bridge-guard-umber.vercel.app',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-    };
-    // Also allow localhost for local dev
-    const reqOrigin = req.headers.origin as string | undefined;
-    if (reqOrigin === 'http://localhost:5173' || reqOrigin === 'http://localhost:3000') {
-      CORS_HEADERS['Access-Control-Allow-Origin'] = reqOrigin;
-    }
-    for (const [k, v] of Object.entries(CORS_HEADERS)) {
-      res.setHeader(k, v);
-    }
+    // ── CORS ── single call sets headers on EVERY response (incl. errors & preflights)
+    applyCors(req, res);
 
     if (req.method === 'OPTIONS') {
-      // Return preflight response with CORS headers explicitly in writeHead
-      res.writeHead(204, CORS_HEADERS);
+      // Preflight: read back the headers applyCors() just set so writeHead() includes them.
+      res.writeHead(204, res.getHeaders());
       res.end();
       return;
     }
