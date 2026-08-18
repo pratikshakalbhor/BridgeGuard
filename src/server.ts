@@ -841,7 +841,7 @@ async function main() {
           contractAddress: deploymentAddress,
           network,
           walletAddress: walletCtx ? walletCtx.unshieldedKeystore.getBech32Address().toString() : null,
-          balance: walletCtx ? await currentBalance().catch(() => ({ tNight: '0', dust: '0' })) : { tNight: '0', dust: '0' },
+          balance: walletCtx ? await withTimeout(currentBalance(), 500, { tNight: '0', dust: '0' }) : { tNight: '0', dust: '0' },
           ledger: serialized,
           initializing: isInitializing,
         });
