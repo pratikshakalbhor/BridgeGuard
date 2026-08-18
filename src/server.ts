@@ -16,25 +16,44 @@
  *   *                          -> static assets from frontend/
  */
 // ─── Global crash-guards (must be first, before any async code) ────────────────
-// Wallet.Sync and other Midnight SDK internal loops can throw unhandled
-// promise rejections that would normally kill the Node.js process silently.
-// These handlers log the real error and keep the server alive so Render
-// does not restart the process and the fallback /api/state (503) keeps working.
-process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
+// Wallet.Sync and other Midnight SDK internal loops can:
+//   (a) throw unhandled promise rejections → caught by unhandledRejection
+//   (b) throw synchronous errors           → caught by uncaughtException
+//   (c) explicitly call process.exit()     → intercepted below
+// All three paths are neutralised so Render never sees "Detected service
+// running on port 10000" again just because of a Midnight SDK fiber failure.
+
+// (c) Intercept explicit process.exit() calls from Effect-TS / Midnight SDK
+const _realExit = process.exit.bind(process);
+(process as any).exit = (code?: number): never => {
+  // Only allow exit if WE call _realExit (e.g. SIGTERM shutdown). All others
+  // are SDK-internal panics — log them and keep the server alive.
+  console.error(`🔥 [process.exit(${code ?? ''}) INTERCEPTED] — keeping server alive. Stack:`);
+  console.trace();
+  // Return as if nothing happened (server stays up)
+  return undefined as never;
+};
+
+// (a) Unhandled promise rejections
+process.on('unhandledRejection', (reason: unknown) => {
   console.error('🔥 [UNHANDLED REJECTION] A promise was rejected without a .catch():');
-  console.error('   Reason:', reason);
   if (reason instanceof Error) {
+    console.error('   Message:', reason.message);
     console.error('   Stack:', reason.stack);
     if ((reason as any).cause) console.error('   Cause:', (reason as any).cause);
+  } else {
+    console.error('   Reason:', reason);
   }
-  // Do NOT call process.exit() — keep the server alive
+  // Do NOT exit — keep the server alive
 });
+
+// (b) Uncaught synchronous exceptions
 process.on('uncaughtException', (err: Error, origin: string) => {
   console.error(`🔥 [UNCAUGHT EXCEPTION] origin=${origin}`);
   console.error('   Error:', err?.message ?? err);
   console.error('   Stack:', err?.stack);
   if ((err as any).cause) console.error('   Cause:', (err as any).cause);
-  // Do NOT call process.exit() — keep the server alive so /api/state fallback works
+  // Do NOT exit — keep the server alive so /api/state 503 fallback works
 });
 
 import * as fs from 'node:fs';
@@ -756,24 +775,28 @@ async function main() {
   console.log(`  Proof Server: ${networkConfig.proofServer}\n`);
 
   const server = http.createServer(async (req: any, res: any) => {
-    // Enable CORS for frontend API clients (Vercel deployment + local dev)
-    const origin = req.headers.origin;
-    const allowedOrigins = [
-      'https://bridge-guard-umber.vercel.app',
-      'http://localhost:5173',
-      'http://localhost:3000',
-    ];
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-    } else {
-      res.setHeader('Access-Control-Allow-Origin', '*');
+    // ── CORS — set on every response, including preflight ──────────────────────
+    // Always allow the Vercel frontend and local dev origins.
+    // We pass headers explicitly to writeHead() for OPTIONS so they are
+    // guaranteed to be present (res.setHeader() alone can be silently dropped
+    // when writeHead() is called without a headers object on older Node versions).
+    const CORS_HEADERS: Record<string, string> = {
+      'Access-Control-Allow-Origin': 'https://bridge-guard-umber.vercel.app',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    };
+    // Also allow localhost for local dev
+    const reqOrigin = req.headers.origin as string | undefined;
+    if (reqOrigin === 'http://localhost:5173' || reqOrigin === 'http://localhost:3000') {
+      CORS_HEADERS['Access-Control-Allow-Origin'] = reqOrigin;
     }
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    for (const [k, v] of Object.entries(CORS_HEADERS)) {
+      res.setHeader(k, v);
+    }
 
     if (req.method === 'OPTIONS') {
-      res.writeHead(204);
+      // Return preflight response with CORS headers explicitly in writeHead
+      res.writeHead(204, CORS_HEADERS);
       res.end();
       return;
     }
@@ -901,13 +924,13 @@ async function main() {
     } catch (e) {
       console.error('  Shutdown error:', e);
     }
-    process.exit(0);
+    _realExit(0); // use _realExit so the intercepted process.exit doesn't block graceful shutdown
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }
 
 main().catch((err) => {
-  console.error(err);
-  process.exit(1);
+  console.error('Fatal error in main():', err);
+  _realExit(1); // genuine startup failure — do exit
 });
