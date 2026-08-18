@@ -728,17 +728,24 @@ async function main() {
   console.log(`  Proof Server: ${networkConfig.proofServer}\n`);
 
   const server = http.createServer(async (req: any, res: any) => {
-    // Enable CORS for frontend API clients
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    // Enable CORS for frontend API clients (Vercel deployment + local dev)
+    const origin = req.headers.origin;
+    const allowedOrigins = [
+      'https://bridge-guard-umber.vercel.app',
+      'http://localhost:5173',
+      'http://localhost:3000',
+    ];
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
     if (req.method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-      });
+      res.writeHead(204);
       res.end();
       return;
     }
