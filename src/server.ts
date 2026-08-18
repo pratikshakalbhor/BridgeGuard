@@ -15,6 +15,28 @@
  *   POST /api/flag             -> flagBridge
  *   *                          -> static assets from frontend/
  */
+// ─── Global crash-guards (must be first, before any async code) ────────────────
+// Wallet.Sync and other Midnight SDK internal loops can throw unhandled
+// promise rejections that would normally kill the Node.js process silently.
+// These handlers log the real error and keep the server alive so Render
+// does not restart the process and the fallback /api/state (503) keeps working.
+process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
+  console.error('🔥 [UNHANDLED REJECTION] A promise was rejected without a .catch():');
+  console.error('   Reason:', reason);
+  if (reason instanceof Error) {
+    console.error('   Stack:', reason.stack);
+    if ((reason as any).cause) console.error('   Cause:', (reason as any).cause);
+  }
+  // Do NOT call process.exit() — keep the server alive
+});
+process.on('uncaughtException', (err: Error, origin: string) => {
+  console.error(`🔥 [UNCAUGHT EXCEPTION] origin=${origin}`);
+  console.error('   Error:', err?.message ?? err);
+  console.error('   Stack:', err?.stack);
+  if ((err as any).cause) console.error('   Cause:', (err as any).cause);
+  // Do NOT call process.exit() — keep the server alive so /api/state fallback works
+});
+
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as http from 'node:http';
