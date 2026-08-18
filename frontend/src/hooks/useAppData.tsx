@@ -5,25 +5,34 @@ import type { AppState } from '@/services/api';
 
 interface AppDataValue {
   data: AppState | null;
-  /** Live data source (backend reachable). True only once /api/state has responded. */
+  /** True once /api/state has responded with ledger data at least once. */
   live: boolean;
+  /** True ONLY before the very first successful fetch — never resets to true after that. */
   loading: boolean;
+  /** True when ledger data is present (data?.ledger exists). */
+  hasData: boolean;
+  /** Non-null when the latest poll failed. `data` still holds the last good snapshot. */
   error: string | null;
+  /** True when data is available but the last poll failed (stale / reconnecting). */
+  stale: boolean;
   refresh: () => Promise<void>;
-  /** On-chain snapshot from the deployed Midnight contract, or null while loading / on failure. */
+  /** Alias for data — On-chain snapshot from the deployed Midnight contract. */
   state: AppState | null;
 }
 
 const AppDataContext = createContext<AppDataValue | undefined>(undefined);
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
-  const { data, loading, error, refresh } = useBridgeData(5000);
+  const { data, loading, hasData, error, refresh } = useBridgeData(5000);
 
   const value: AppDataValue = {
     data,
-    live: data !== null,
+    live: hasData,
     loading,
+    hasData,
     error,
+    // stale = we have data to show but the latest poll failed
+    stale: hasData && error !== null,
     refresh,
     state: data,
   };

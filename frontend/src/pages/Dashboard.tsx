@@ -63,7 +63,7 @@ const EVENT_META: Record<string, { tone: 'cyan' | 'violet' | 'warning' | 'danger
 };
 
 export function Dashboard() {
-  const { state, loading, error, refresh } = useAppData();
+  const { state, loading, hasData, error, stale, refresh } = useAppData();
   const { address: connectedAddress } = useWallet();
   const [showAllEvents, setShowAllEvents] = useState(false);
 
@@ -131,19 +131,26 @@ export function Dashboard() {
       .slice(0, 5);
   }, [state]);
 
-  if (!state) {
-    return loading ? (
-      <EmptyState title="Loading registry…" body="Reading bridge state from the Midnight contract." />
-    ) : (
-      <ErrorComponent message={error ?? 'Unable to reach the BridgeGuard backend.'} onRetry={refresh} />
-    );
+  // ── Loading: only before the very first successful fetch ──────────────────
+  if (loading) {
+    return <EmptyState title="Loading registry…" body="Reading bridge state from the Midnight contract." />;
+  }
+  // ── No data at all after first fetch attempt ────────────────────────────────
+  if (!hasData || !state) {
+    return <ErrorComponent message={error ?? 'Unable to reach the BridgeGuard backend.'} onRetry={refresh} />;
   }
 
   const { ledger, balance, walletAddress, network } = state;
 
   return (
     <div className="space-y-6">
-      {/* Stats */}
+      {/* Stale/reconnecting banner — shown above data when last poll failed */}
+      {stale && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2.5 text-xs font-medium text-amber-600 dark:text-amber-300">
+          <span className="animate-pulse">⟳</span>
+          Reconnecting to BridgeGuard backend — showing last known data
+        </div>
+      )}
       <Stagger className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StaggerItem>
           <StatCard
