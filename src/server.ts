@@ -244,7 +244,11 @@ async function currentBalance() {
 
 function json(res: any, code: number, payload: unknown) {
   const body = JSON.stringify(payload, (_, v) => (typeof v === 'bigint' ? v.toString() : v));
-  res.writeHead(code, { 'Content-Type': 'application/json' });
+  // Merge any headers already queued via res.setHeader() (e.g. CORS headers set at the
+  // top of each request) into writeHead(). Node.js drops setHeader() calls when
+  // writeHead() is invoked with an explicit headers object — merging prevents that.
+  const existingHeaders: Record<string, string | string[]> = res.getHeaders ? res.getHeaders() : {};
+  res.writeHead(code, { ...existingHeaders, 'Content-Type': 'application/json' });
   res.end(body);
 }
 
