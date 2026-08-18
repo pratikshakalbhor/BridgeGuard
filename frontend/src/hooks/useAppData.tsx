@@ -21,7 +21,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const value: AppDataValue = {
     data,
-    live: data !== null && data.live !== false,
+    live: data !== null,
     loading,
     error,
     refresh,

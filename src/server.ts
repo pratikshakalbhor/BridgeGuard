@@ -171,32 +171,6 @@ let lastSyncCheck = 'Not started';
 // UI can show a genuine "last on-chain tx" reference instead of placeholder data.
 const lastTxByBridge = new Map<string, string>();
 
-let lastKnownState: any = null;
-let lastKnownStateTime: number | null = null;
-
-function cacheState(state: any) {
-  lastKnownState = state;
-  lastKnownStateTime = Date.now();
-  try {
-    const dir = path.join(process.cwd(), 'data');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'last-known-state.json'), JSON.stringify(state, null, 2));
-  } catch {}
-}
-
-function loadFallbackState(): any {
-  const tryPaths = [
-    path.join(process.cwd(), 'data', 'last-known-state.json'),
-    path.join(process.cwd(), 'data', 'fallback-state.json'),
-  ];
-  for (const p of tryPaths) {
-    try {
-      if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'));
-    } catch {}
-  }
-  return null;
-}
-
 // Standalone public data provider for reading indexer contract state before backend wallet init
 const standalonePublicDataProvider = indexerPublicDataProvider(networkConfig.indexer, networkConfig.indexerWS);
 
@@ -787,42 +761,23 @@ async function main() {
 
       if (req.method === 'GET' && pathname === '/api/state') {
         const ledger = await readLedger();
-        if (ledger) {
-          const liveState = {
-            contractAddress: deploymentAddress,
-            network,
-            walletAddress: walletCtx ? walletCtx.unshieldedKeystore.getBech32Address().toString() : null,
-            balance: walletCtx ? await currentBalance().catch(() => ({ tNight: '0', dust: '0' })) : { tNight: '0', dust: '0' },
-            ledger: serializeLedger(ledger),
-            initializing: isInitializing,
-            live: true,
-          };
-          cacheState(liveState);
-          return json(res, 200, liveState);
-        }
-
-        // Fallback path — RPC/sync fail or ledger query unavailable
-        const fallback = lastKnownState ?? loadFallbackState();
-        if (fallback) {
-          return json(res, 200, {
-            ...fallback,
-            contractAddress: deploymentAddress || fallback.contractAddress,
-            network,
-            live: false,
-            staleSince: lastKnownStateTime,
-            notice: 'Live Midnight network sync temporarily unavailable — showing cached demo state.',
-            initializing: isInitializing,
+        if (!ledger) {
+          const statusDetail = initError
+            ? `Initialization failed: ${initError.message || String(initError)}`
+            : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
+          return json(res, 503, {
+            error: 'Contract state not available yet',
+            detail: statusDetail,
+            initializing: isInitializing
           });
         }
-
-        const statusDetail = initError
-          ? `Initialization failed: ${initError.message || String(initError)}`
-          : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
-        return json(res, 503, {
-          error: 'Contract state not available yet',
-          detail: statusDetail,
+        return json(res, 200, {
+          contractAddress: deploymentAddress,
+          network,
+          walletAddress: walletCtx ? walletCtx.unshieldedKeystore.getBech32Address().toString() : null,
+          balance: walletCtx ? await currentBalance().catch(() => ({ tNight: '0', dust: '0' })) : { tNight: '0', dust: '0' },
+          ledger: serializeLedger(ledger),
           initializing: isInitializing,
-          live: false,
         });
       }
 

@@ -59,8 +59,6 @@ export interface AppState {
   walletAddress: string;
   balance: WalletMeta;
   ledger: LedgerState;
-  live?: boolean;
-  notice?: string;
 }
 
 export interface TxResult {

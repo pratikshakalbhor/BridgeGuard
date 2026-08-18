@@ -3,8 +3,6 @@ import type { ReactNode } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { AppTopbar } from '@/components/layout/AppTopbar';
 
-import { useAppData } from '@/hooks/useAppData';
-
 interface MainLayoutProps {
   title: string;
   subtitle?: string;
@@ -14,16 +12,9 @@ interface MainLayoutProps {
 
 export function MainLayout({ title, subtitle, live, children }: MainLayoutProps) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const { data } = useAppData();
-  const isDemo = data && data.live === false;
 
   return (
     <div className="min-h-screen bg-grid-faint">
-      {isDemo && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-center text-xs font-medium text-amber-600 dark:text-amber-400">
-          ⚠ Live Midnight network sync temporarily unavailable — showing cached demo state.
-        </div>
-      )}
       <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
       <div className="flex min-h-screen flex-col lg:pl-72">
         <AppTopbar
