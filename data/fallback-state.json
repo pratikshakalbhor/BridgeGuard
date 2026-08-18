@@ -1,0 +1,69 @@
+{
+  "contractAddress": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "network": "preprod",
+  "walletAddress": null,
+  "balance": {
+    "tNight": "1000000000",
+    "dust": "50000"
+  },
+  "ledger": {
+    "bridges": [
+      {
+        "id": "0",
+        "name": "Stargate Prime",
+        "srcChain": "1",
+        "dstChain": "137",
+        "tvl": "50000000",
+        "audited": "1",
+        "incidents": "0",
+        "riskScore": "12",
+        "status": 0,
+        "statusLabel": "ACTIVE"
+      },
+      {
+        "id": "1",
+        "name": "Wormhole Core",
+        "srcChain": "1",
+        "dstChain": "56",
+        "tvl": "120000000",
+        "audited": "1",
+        "incidents": "1",
+        "riskScore": "35",
+        "status": 0,
+        "statusLabel": "ACTIVE"
+      },
+      {
+        "id": "2",
+        "name": "LayerZero Omni",
+        "srcChain": "1",
+        "dstChain": "42161",
+        "tvl": "85000000",
+        "audited": "1",
+        "incidents": "0",
+        "riskScore": "18",
+        "status": 0,
+        "statusLabel": "ACTIVE"
+      }
+    ],
+    "registryCount": "3",
+    "assessmentCount": "5",
+    "lastVerdict": "0",
+    "lastVerdictLabel": "LOW",
+    "lastWithinTolerance": true,
+    "lastBridgeId": "2",
+    "latestVerdicts": [
+      { "key": "0", "value": "0", "label": "LOW" },
+      { "key": "1", "value": "1", "label": "MEDIUM" },
+      { "key": "2", "value": "0", "label": "LOW" }
+    ],
+    "latestWithin": [
+      { "key": "0", "value": "true", "label": "WITHIN" },
+      { "key": "1", "value": "true", "label": "WITHIN" },
+      { "key": "2", "value": "true", "label": "WITHIN" }
+    ],
+    "latestTxIds": []
+  },
+  "initializing": false,
+  "live": false,
+  "notice": "Live Midnight network sync temporarily unavailable — showing cached demo state."
+}
