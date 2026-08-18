@@ -140,22 +140,28 @@ function mapToArray(map: any): Array<{ key: string; value: string; label?: strin
 }
 
 function serializeLedger(ledger: any) {
-  const bridges: any[] = [];
-  for (const [, b] of ledger.bridges) bridges.push(serializeBridge(b));
-  const withinArray: Array<{ key: string; value: string; label?: string }> = [];
-  for (const [k, v] of ledger.latestWithin) withinArray.push({ key: k.toString(), value: v.toString(), label: v ? 'WITHIN' : 'EXCEEDS' });
-  return {
-    bridges,
-    registryCount: ledger.registryCount.toString(),
-    assessmentCount: ledger.assessmentCount.toString(),
-    lastVerdict: ledger.lastVerdict.toString(),
-    lastVerdictLabel: VERDICT_LABELS[Number(ledger.lastVerdict)] ?? String(ledger.lastVerdict),
-    lastWithinTolerance: ledger.lastWithinTolerance,
-    lastBridgeId: ledger.lastBridgeId.toString(),
-    latestVerdicts: mapToArray(ledger.latestVerdicts),
-    latestWithin: withinArray,
-    latestTxIds: [...lastTxByBridge.entries()].map(([key, value]) => ({ key, value })),
-  };
+  try {
+    const bridges: any[] = [];
+    for (const [, b] of ledger.bridges) bridges.push(serializeBridge(b));
+    const withinArray: Array<{ key: string; value: string; label?: string }> = [];
+    for (const [k, v] of ledger.latestWithin) withinArray.push({ key: k.toString(), value: v.toString(), label: v ? 'WITHIN' : 'EXCEEDS' });
+    return {
+      bridges,
+      registryCount: ledger.registryCount.toString(),
+      assessmentCount: ledger.assessmentCount.toString(),
+      lastVerdict: ledger.lastVerdict.toString(),
+      lastVerdictLabel: VERDICT_LABELS[Number(ledger.lastVerdict)] ?? String(ledger.lastVerdict),
+      lastWithinTolerance: ledger.lastWithinTolerance,
+      lastBridgeId: ledger.lastBridgeId.toString(),
+      latestVerdicts: mapToArray(ledger.latestVerdicts),
+      latestWithin: withinArray,
+      latestTxIds: [...lastTxByBridge.entries()].map(([key, value]) => ({ key, value })),
+    };
+  } catch (serErr: any) {
+    console.error('[/api/state] serializeLedger CRASHED:', serErr?.message ?? serErr);
+    console.dir(serErr, { depth: 3 });
+    throw serErr; // re-throw so the route's catch block returns 500
+  }
 }
 
 // ─── App state ─────────────────────────────────────────────────────────────────
@@ -760,7 +766,15 @@ async function main() {
       }
 
       if (req.method === 'GET' && pathname === '/api/state') {
-        const ledger = await readLedger();
+        console.log('[/api/state] handler entered, deploymentAddress:', deploymentAddress || '(empty!)');
+        let ledger: any = null;
+        try {
+          ledger = await readLedger();
+        } catch (rlErr: any) {
+          console.error('[/api/state] readLedger() threw:', rlErr?.message ?? rlErr);
+          return json(res, 500, { error: 'readLedger failed', detail: String(rlErr?.message ?? rlErr) });
+        }
+        console.log('[/api/state] readLedger returned:', ledger === null ? 'null' : 'object');
         if (!ledger) {
           const statusDetail = initError
             ? `Initialization failed: ${initError.message || String(initError)}`
@@ -771,12 +785,19 @@ async function main() {
             initializing: isInitializing
           });
         }
+        let serialized: any;
+        try {
+          serialized = serializeLedger(ledger);
+        } catch (slErr: any) {
+          console.error('[/api/state] serializeLedger() threw:', slErr?.message ?? slErr);
+          return json(res, 500, { error: 'serializeLedger failed', detail: String(slErr?.message ?? slErr) });
+        }
         return json(res, 200, {
           contractAddress: deploymentAddress,
           network,
           walletAddress: walletCtx ? walletCtx.unshieldedKeystore.getBech32Address().toString() : null,
           balance: walletCtx ? await currentBalance().catch(() => ({ tNight: '0', dust: '0' })) : { tNight: '0', dust: '0' },
-          ledger: serializeLedger(ledger),
+          ledger: serialized,
           initializing: isInitializing,
         });
       }
