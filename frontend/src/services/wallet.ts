@@ -254,16 +254,8 @@ export async function connectWallet(
   if (!found) {
     throw new Error('No Midnight wallet detected. Open the Midnight Lace wallet (or 1AM) extension first.');
   }
-  const withTimeout = <T>(p: Promise<T>, ms: number, label: string): Promise<T> =>
-    Promise.race([
-      p,
-      new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
-      ),
-    ]);
-
   try {
-    const connected = await withTimeout(found.wallet.connect(networkId), 30000, 'Wallet connect');
+    const connected = await found.wallet.connect(networkId);
     // Retain the connected API for wallet-signed transactions (Phase 0 POC
     // rule: the object must not be discarded after connect resolves).
     retainedApi = connected;

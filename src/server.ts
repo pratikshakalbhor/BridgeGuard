@@ -21,7 +21,6 @@ import * as http from 'node:http';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocket } from 'ws';
 import * as Rx from 'rxjs';
-import { Cause } from 'effect';
 
 // Midnight SDK imports
 import { createUnprovenCallTx, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
@@ -589,7 +588,7 @@ async function initializeBackground() {
     } finally {
       clearInterval(checkpointTimer);
       const inFlight = checkpointInFlight as Promise<void> | null;
-      if (inFlight) await inFlight.catch(() => {});
+      if (inFlight) await inFlight.catch(() => { });
       await persistWalletState(network, walletCtx);
     }
     lastSyncCheck = 'Synced.';
@@ -641,23 +640,14 @@ async function initializeBackground() {
     isInitializing = false;
     retryCount = 0; // reset on success
   } catch (err: any) {
-    console.error(`❌ Background Initialization Attempt ${retryCount + 1} Failed:`, err?.message ?? err);
-
-    // जर हा Effect चा structured error असेल (Cause tag असलेला), तो properly unwrap करा
-    if (err && typeof err === 'object' && '_tag' in err) {
-      try {
-        console.error('Effect Cause (pretty):', Cause.pretty(err as Cause.Cause<unknown>));
-      } catch {
-        console.dir(err, { depth: null });
-      }
-    } else if (err && typeof err === 'object') {
+    console.error(`❌ Background Initialization Attempt ${retryCount + 1} Failed:`, err);
+    if (err && typeof err === 'object') {
       console.dir(err, { depth: null });
-    }
-
-    if (err?.cause) {
-      console.error('Underlying cause details:', err.cause);
-      if (typeof err.cause === 'object' && err.cause.cause) {
-        console.error('Core error detail:', err.cause.cause);
+      if (err.cause) {
+        console.error('Underlying cause details:', err.cause);
+        if (typeof err.cause === 'object' && err.cause.cause) {
+          console.error('Core error detail:', err.cause.cause);
+        }
       }
     }
 
