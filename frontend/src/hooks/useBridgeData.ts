@@ -12,11 +12,11 @@ interface UseBridgeDataResult {
   refresh: () => Promise<void>;
 }
 
-// Exponential backoff caps: 5s → 10s → 20s → 30s (stays at 30s)
-const BACKOFF_STEPS_MS = [5_000, 10_000, 20_000, 30_000];
-// After this many consecutive failures on the FIRST load, stop the loading
-// spinner and surface the error + retry button instead of blocking forever.
-const MAX_FIRST_LOAD_FAILURES = 5;
+// Exponential backoff caps: 3s → 5s → 10s → 20s
+const BACKOFF_STEPS_MS = [3_000, 5_000, 10_000, 20_000];
+// After 2 consecutive failures on the FIRST load (approx 3s total),
+// stop the loading spinner and surface the error + retry button so the user is never stuck buffering.
+const MAX_FIRST_LOAD_FAILURES = 2;
 
 /**
  * Polls /api/state and exposes the latest snapshot with exponential backoff.

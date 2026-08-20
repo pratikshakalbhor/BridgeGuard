@@ -9,9 +9,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   });
-  const payload = (await res.json().catch(() => ({}))) as { error?: string };
+  const payload = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
   if (!res.ok) {
-    throw new Error(payload.error ?? `Request failed (${res.status})`);
+    const msg = payload.detail
+      ? `${payload.error ?? 'Request failed'}: ${payload.detail}`
+      : (payload.error ?? `Request failed (${res.status})`);
+    throw new Error(msg);
   }
   return payload as T;
 }
