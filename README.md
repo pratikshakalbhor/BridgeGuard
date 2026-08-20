@@ -432,6 +432,7 @@ For production/demo hosting under Level 2, the app is deployed in a decoupled ar
 ### B. Backend API (Render Web Service)
 * **Hosting:** Deployed as a persistent web service container on Render using the root `Dockerfile`.
 * **Private State Sync:** LevelDB state is kept inside the container.
+* **Backend wallet is optional:** `/api/state` and the static frontend are served even when the backend wallet is not configured or fails to sync/initialize. Wallet-dependent endpoints (`/api/balance`, `/api/register`, `/api/evaluate`, `/api/flag`, `/api/poc/*`) return `503` ("Backend wallet not ready") until the wallet is up. End-user ZK evaluations run entirely in the browser and never need the backend wallet.
 * **Environment Variables (Render Environment Variables):**
   * `MIDNIGHT_WALLET_MNEMONIC`: The 24-word recovery phrase for the service wallet on Preview.
   * `PRIVATE_STATE_PASSWORD`: Encryption key (min 16 chars) to seal the private database on disk.

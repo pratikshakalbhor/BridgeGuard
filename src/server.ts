@@ -8,12 +8,18 @@
  *   PORT=8080 npx tsx src/server.ts
  *
  * REST API (same-origin, JSON):
- *   GET  /api/state            -> full ledger snapshot + wallet meta
- *   GET  /api/balance          -> tNight + DUST balances
- *   POST /api/register         -> registerBridge
- *   POST /api/evaluate         -> feed intel, then evaluateBridge (private)
- *   POST /api/flag             -> flagBridge
+ *   GET  /api/state            -> full ledger snapshot + wallet meta (wallet-independent)
+ *   GET  /api/balance          -> tNight + DUST balances (requires backend wallet)
+ *   POST /api/register         -> registerBridge (requires backend wallet)
+ *   POST /api/evaluate         -> feed intel, then evaluateBridge (private; requires backend wallet)
+ *   POST /api/flag             -> flagBridge (requires backend wallet)
  *   *                          -> static assets from frontend/
+ *
+ * The backend wallet is an OPTIONAL background capability. /api/state and the
+ * static frontend stay available even when createWallet()/waitForSyncedState()
+ * fail, and even when no wallet credentials are configured at all. Endpoints
+ * that actually require the backend wallet answer 503 ("wallet not ready")
+ * until the background wallet is up.
  */
 // ─── Global crash-guards (must be first, before any async code) ────────────────
 // Wallet.Sync and other Midnight SDK internal loops can:
@@ -76,7 +82,7 @@ import { Transaction } from '@midnight-ntwrk/ledger-v8';
 // @ts-expect-error Required for wallet sync
 globalThis.WebSocket = WebSocket;
 
-import { resolveNetwork, getOrCreateWallet, formatWalletBackupNotice, getDeployment } from './network';
+import { resolveNetwork, getOrCreateWallet, formatWalletBackupNotice, getDeployment, loadState } from './network';
 import { createWallet, persistWalletState, unshieldedToken, type WalletContext } from './wallet';
 import { witnessesV2 } from './witnesses-v2';
 
@@ -96,11 +102,36 @@ function attributionAddress(value: unknown): string | null {
 }
 
 const { network, config: networkConfig } = resolveNetwork();
-const WALLET = getOrCreateWallet(network);
-const SEED = WALLET.seed;
-{
+
+// The backend wallet is an OPTIONAL background capability. /api/state and the
+// static frontend are served independently of it; only endpoints that submit
+// transactions through the backend wallet require it. In production, when no
+// wallet credentials are configured (env vars or persisted state), the
+// capability is disabled and the server still boots and serves /api/state +
+// the frontend. In dev (NODE_ENV !== 'production') the previous behavior is
+// preserved: a wallet is generated on demand when none exists.
+const walletCredentialsAvailable =
+  process.env.NODE_ENV === 'production'
+    ? Boolean(process.env.MIDNIGHT_WALLET_MNEMONIC || process.env.MIDNIGHT_WALLET_SEED) ||
+      (() => {
+        try {
+          return Boolean(loadState()?.wallets?.[network]?.seed);
+        } catch {
+          return false;
+        }
+      })()
+    : true;
+
+const WALLET = walletCredentialsAvailable ? getOrCreateWallet(network) : null;
+const SEED = WALLET ? WALLET.seed : null;
+const walletDisabled = WALLET === null;
+if (WALLET) {
   const notice = formatWalletBackupNotice(WALLET, network);
   if (notice) console.log(notice);
+}
+if (walletDisabled) {
+  console.warn('  ⚠ Backend wallet capability disabled: no MIDNIGHT_WALLET_MNEMONIC / MIDNIGHT_WALLET_SEED and no persisted wallet on file.');
+  console.warn('    /api/state and the frontend remain available; wallet-dependent endpoints (/api/balance, /api/register, /api/evaluate, /api/flag, /api/poc/*) will return 503.');
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -251,6 +282,39 @@ async function currentBalance() {
   return { tNight: tn.toString(), dust: dust.toString() };
 }
 
+// ─── Wallet-capability guard ───────────────────────────────────────────────────
+// Endpoints that submit transactions through the backend wallet require the
+// background wallet runtime (walletCtx + providers + deployed contract). When
+// the runtime is unavailable (capability disabled, still initializing, or init
+// failed), those endpoints answer 503 instead of crashing on null derefs.
+// /api/state and the static frontend never go through this guard.
+
+class WalletNotReadyError extends Error {
+  readonly detail: string;
+  constructor(detail: string) {
+    super('Backend wallet not ready');
+    this.name = 'WalletNotReadyError';
+    this.detail = detail;
+  }
+}
+
+function requireWalletRuntime() {
+  if (walletDisabled) {
+    throw new WalletNotReadyError(
+      'Backend wallet capability is disabled: no MIDNIGHT_WALLET_MNEMONIC / MIDNIGHT_WALLET_SEED configured.',
+    );
+  }
+  if (!walletCtx || !providers || !deployed || !deploymentAddress) {
+    const detail = initError
+      ? `Backend wallet initialization failed: ${initError.message || String(initError)}`
+      : isInitializing
+        ? `Backend wallet is still initializing. Status: ${lastSyncCheck}`
+        : 'Backend wallet is not initialized.';
+    throw new WalletNotReadyError(detail);
+  }
+  return { walletCtx, providers, deployed };
+}
+
 // ─── HTTP helpers ──────────────────────────────────────────────────────────────
 
 function json(res: any, code: number, payload: unknown) {
@@ -344,6 +408,7 @@ async function serveStatic(req: any, res: any, pathname: string) {
 // ─── API handlers ──────────────────────────────────────────────────────────────
 
 async function handlerRegister(body: any) {
+  const { deployed } = requireWalletRuntime();
   const name = String(body.name ?? '').trim();
   const srcChain = BigInt(body.srcChain);
   const dstChain = BigInt(body.dstChain);
@@ -370,14 +435,15 @@ async function handlerRegister(body: any) {
 }
 
 async function handlerEvaluate(body: any) {
+  const { providers, deployed } = requireWalletRuntime();
   const bridgeId = BigInt(body.bridgeId);
   const amount = BigInt(body.amount);
   const maxRisk = BigInt(body.maxRisk);
   const intel = Math.max(0, Math.min(20, Math.floor(Number(body.intel ?? 0))));
 
   // Feed fresh confidential intel into the private state backing getRiskIntel.
-  providers!.privateStateProvider.setContractAddress(deploymentAddress);
-  await providers!.privateStateProvider.set(PRIVATE_STATE_ID, { intel });
+  providers.privateStateProvider.setContractAddress(deploymentAddress);
+  await providers.privateStateProvider.set(PRIVATE_STATE_ID, { intel });
 
   const tx = await deployed.callTx.evaluateBridge(bridgeId, amount, maxRisk);
   lastTxByBridge.set(bridgeId.toString(), tx.public.txId);
@@ -399,6 +465,7 @@ async function handlerEvaluate(body: any) {
 }
 
 async function handlerFlag(body: any) {
+  const { deployed } = requireWalletRuntime();
   const bridgeId = BigInt(body.bridgeId);
   const status = BigInt(body.status);
   const tx = await deployed.callTx.flagBridge(bridgeId, status);
@@ -421,6 +488,7 @@ async function handlerFlag(body: any) {
 // Diagnostic logging for steps 1-3 (create → prove → serialize). No private
 // inputs are ever written to the log or the HTTP response.
 async function handlerPocPrepareEvaluate(body: any) {
+  const { providers } = requireWalletRuntime();
   const bridgeId = BigInt(body.bridgeId);
   const amount = BigInt(body.amount);
   const maxRisk = BigInt(body.maxRisk);
@@ -428,10 +496,10 @@ async function handlerPocPrepareEvaluate(body: any) {
 
   console.log('[POC] ── prepare evaluateBridge ──');
   console.log('[POC] 1) creating unproven call tx (circuit: evaluateBridge)');
-  providers!.privateStateProvider.setContractAddress(deploymentAddress);
-  await providers!.privateStateProvider.set(PRIVATE_STATE_ID, { intel });
+  providers.privateStateProvider.setContractAddress(deploymentAddress);
+  await providers.privateStateProvider.set(PRIVATE_STATE_ID, { intel });
 
-  const callTxData = await createUnprovenCallTx(providers!, {
+  const callTxData = await createUnprovenCallTx(providers, {
     compiledContract: compiledContract as never,
     contractAddress: deploymentAddress,
     circuitId: 'evaluateBridge',
@@ -440,7 +508,7 @@ async function handlerPocPrepareEvaluate(body: any) {
   });
 
   console.log('[POC] 2) generating proof (proof server)');
-  const provenTx = await providers!.proofProvider.proveTx(callTxData.private.unprovenTx);
+  const provenTx = await providers.proofProvider.proveTx(callTxData.private.unprovenTx);
 
   const serializedTxHex = toHex(provenTx.serialize());
   console.log(
@@ -465,6 +533,7 @@ async function handlerPocPrepareEvaluate(body: any) {
 // handlerEvaluate) so the wallet-signed UI can show the real on-chain verdict
 // without the private amount/tolerance/intel ever leaving this process.
 async function handlerPocFinalize(body: any) {
+  const { providers } = requireWalletRuntime();
   const balancedTxHex = String(body.balancedTxHex ?? '').trim();
   if (!/^(?:[0-9a-f]{2})+$/i.test(balancedTxHex)) {
     throw new Error('balancedTxHex must be a hex-encoded transaction');
@@ -478,7 +547,7 @@ async function handlerPocFinalize(body: any) {
 
   console.log('[POC] 8) watching indexer for confirmation');
   const data = await withTimeout(
-    providers!.publicDataProvider.watchForTxData(txId),
+    providers.publicDataProvider.watchForTxData(txId),
     120_000,
     null as never,
   );
@@ -603,6 +672,15 @@ const MAX_INIT_RETRIES = 15;
 const RETRY_DELAY_MS = 15000;
 
 async function initializeBackground() {
+  if (!SEED) {
+    // Wallet capability disabled (production without credentials). The server
+    // keeps serving /api/state and the frontend; wallet-dependent endpoints
+    // answer 503 via requireWalletRuntime().
+    console.warn('  [Background Wallet] Disabled — no wallet credentials configured. Serving /api/state + frontend without the backend wallet.');
+    lastSyncCheck = 'Disabled (no wallet credentials)';
+    isInitializing = false;
+    return;
+  }
   if (isInitializing === false && walletCtx !== null) return; // already successfully initialized
   isInitializing = true;
 
@@ -773,30 +851,37 @@ async function main() {
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 
   if (process.env.NODE_ENV === 'production') {
-    const hasEnvWallet = !!(process.env.MIDNIGHT_WALLET_MNEMONIC || process.env.MIDNIGHT_WALLET_SEED);
-    if (!hasEnvWallet) {
-      console.error('\n❌ Production Startup Error: MIDNIGHT_WALLET_MNEMONIC or MIDNIGHT_WALLET_SEED must be configured in environment variables for production deployments to ensure persistent wallet state.');
-      process.exit(1);
+    // Backend wallet credentials are OPTIONAL. /api/state and the frontend are
+    // served without them; only wallet-dependent endpoints are affected. These
+    // used to hard-fail production startup — they no longer do.
+    if (!walletCredentialsAvailable) {
+      console.warn('\n⚠ Production: no MIDNIGHT_WALLET_MNEMONIC / MIDNIGHT_WALLET_SEED and no persisted wallet on file.');
+      console.warn('  Backend wallet capability is disabled. /api/state and the frontend remain available;');
+      console.warn('  wallet-dependent endpoints (/api/balance, /api/register, /api/evaluate, /api/flag, /api/poc/*) return 503.');
     }
     const pwd = (process.env.PRIVATE_STATE_PASSWORD || '').trim();
     if (!pwd || pwd === 'Local-Devnet-Development-Placeholder-1' || pwd.length < 16) {
-      console.error('\n❌ Production Startup Error: PRIVATE_STATE_PASSWORD must be configured and be at least 16 characters long in production environments.');
-      process.exit(1);
+      console.warn('\n⚠ Production: PRIVATE_STATE_PASSWORD is missing or shorter than 16 characters.');
+      console.warn('  The backend wallet private-state store (when enabled) will use the default devnet placeholder password.');
     }
     if (network === 'undeployed') {
-      console.error('\n❌ Production Startup Error: The MIDNIGHT_NETWORK environment variable must be set to "preview" or "preprod" for production deployments. Running on "undeployed" (local devnet) is not supported in production.');
-      process.exit(1);
+      console.warn('\n⚠ Production: MIDNIGHT_NETWORK is not set to "preview" or "preprod" — running on "undeployed" (local devnet) defaults.');
+      console.warn('  /api/state will query the local devnet indexer and likely fail. Set MIDNIGHT_NETWORK=preview|preprod for production.');
     }
   }
 
   let deploymentAddressResolved = process.env.MIDNIGHT_CONTRACT_ADDRESS;
   if (!deploymentAddressResolved) {
     const deployment = getDeployment(network);
-    if (!deployment) {
-      console.error(`❌ No deploy on file for network ${network}. Run \`npx tsx src/deploy-v2.ts --network ${network}\` first, or set MIDNIGHT_CONTRACT_ADDRESS.`);
-      process.exit(1);
+    if (deployment) {
+      deploymentAddressResolved = deployment.address;
+    } else {
+      // Non-fatal: the server still serves /api/state (503 with a clear
+      // detail) and the frontend until a deployment is recorded.
+      console.warn(`\n⚠ No deploy on file for network ${network} and MIDNIGHT_CONTRACT_ADDRESS is not set.`);
+      console.warn(`  /api/state will report "contract state not available" (503). Run \`npx tsx src/deploy-v2.ts --network ${network}\` or set MIDNIGHT_CONTRACT_ADDRESS.`);
+      deploymentAddressResolved = '';
     }
-    deploymentAddressResolved = deployment.address;
   }
   deploymentAddress = deploymentAddressResolved;
   console.log(`  Contract: ${deploymentAddress}`);
@@ -865,19 +950,23 @@ async function main() {
 
       if (isInitializing) {
         if (pathname.startsWith('/api/')) {
-          const statusDetail = initError
-            ? `Initialization failed: ${initError.message || String(initError)}`
-            : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
+          const statusDetail = walletDisabled
+            ? 'Backend wallet capability is disabled (no MIDNIGHT_WALLET_MNEMONIC / MIDNIGHT_WALLET_SEED configured). /api/state and the frontend remain available; only wallet-dependent endpoints are affected.'
+            : initError
+              ? `Initialization failed: ${initError.message || String(initError)}`
+              : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
           return json(res, 503, {
             error: 'Service unavailable',
             detail: statusDetail,
-            initializing: true
+            initializing: true,
+            walletDisabled,
           });
         }
         return serveStatic(req, res, pathname);
       }
       if (req.method === 'GET' && pathname === '/api/balance') {
-        await walletCtx!.wallet.waitForSyncedState();
+        const runtime = requireWalletRuntime();
+        await runtime.walletCtx.wallet.waitForSyncedState();
         return json(res, 200, await currentBalance());
       }
       if (req.method === 'POST' && pathname === '/api/register') {
@@ -916,6 +1005,15 @@ async function main() {
       }
       return serveStatic(req, res, pathname);
     } catch (err: any) {
+      if (err instanceof WalletNotReadyError) {
+        console.warn('[server] Wallet-dependent endpoint requested while backend wallet unavailable:', err.detail);
+        return json(res, 503, {
+          error: err.message,
+          detail: err.detail,
+          initializing: isInitializing,
+          walletDisabled,
+        });
+      }
       console.error('API Error in server.ts:', err);
       const msg = err?.message || String(err);
       return json(res, 500, { error: msg });
