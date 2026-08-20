@@ -1,4 +1,4 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
 interface ErrorComponentProps {
@@ -13,12 +13,18 @@ export function ErrorComponent({ message, onRetry }: ErrorComponentProps) {
         <AlertTriangle className="size-7" />
       </div>
       <div>
-        <h3 className="font-semibold text-slate-900 dark:text-white">Connection issue</h3>
+        <h3 className="font-semibold text-slate-900 dark:text-white">Cannot reach backend</h3>
         <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">{message}</p>
+        <p className="mt-3 max-w-sm text-xs text-slate-400 dark:text-slate-500">
+          The BridgeGuard backend runs on Render's free tier and may need{' '}
+          <span className="font-semibold text-amber-500">30–60 s</span> to wake up
+          after inactivity. The page will keep retrying automatically — or click Retry now.
+        </p>
       </div>
       {onRetry && (
-        <Button variant="outline" onClick={onRetry}>
-          Try again
+        <Button variant="outline" onClick={onRetry} className="gap-2">
+          <RefreshCw className="size-4" />
+          Retry
         </Button>
       )}
     </div>

@@ -12,56 +12,101 @@ interface UseBridgeDataResult {
   refresh: () => Promise<void>;
 }
 
+// Exponential backoff caps: 5s → 10s → 20s → 30s (stays at 30s)
+const BACKOFF_STEPS_MS = [5_000, 10_000, 20_000, 30_000];
+// After this many consecutive failures on the FIRST load, stop the loading
+// spinner and surface the error + retry button instead of blocking forever.
+const MAX_FIRST_LOAD_FAILURES = 5;
+
 /**
- * Polls /api/state every `intervalMs` and exposes the latest snapshot.
+ * Polls /api/state and exposes the latest snapshot with exponential backoff.
  *
  * Key production-grade behaviour:
  *  - `loading` is true ONLY while we are waiting for the very first response.
- *    After that it is permanently false — a later poll failure never resets the UI.
+ *    After MAX_FIRST_LOAD_FAILURES retries it flips to false so the UI shows
+ *    an error + retry button instead of hanging indefinitely.
+ *  - Exponential backoff on failure: 5 → 10 → 20 → 30 s (avoids hammering
+ *    the Render backend during cold starts / CORS-less 502 windows).
  *  - `error` is set on poll failure but `data` keeps the last good snapshot so
  *    the dashboard stays populated during transient network glitches.
  *  - `hasData` is true once `ledger` has been received at least once.
  *  - Window focus triggers a refresh so the dashboard stays current.
  */
-export function useBridgeData(intervalMs = 5000): UseBridgeDataResult {
+export function useBridgeData(intervalMs = 30_000): UseBridgeDataResult {
   const [data, setData] = useState<AppState | null>(null);
   const [error, setError] = useState<string | null>(null);
   // hasLoadedOnce tracks whether we have received ANY successful response yet.
   const hasLoadedOnce = useRef(false);
-  // Force re-render when hasLoadedOnce flips (useRef alone does not trigger renders).
+  // Force re-render when hasLoadedOnce flips.
   const [loadedFlag, setLoadedFlag] = useState(false);
+  // Consecutive failure counter — resets to 0 on success.
+  const failCount = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Forward-declare poll so scheduleNext can reference it.
+  const pollRef = useRef<() => Promise<void>>();
 
-  const refresh = useCallback(async () => {
+  const scheduleNext = useCallback(
+    (consecutiveFails: number) => {
+      if (timer.current) clearTimeout(timer.current);
+      // Use backoff only while we have no data yet; once live, keep fixed interval.
+      const delay = hasLoadedOnce.current
+        ? intervalMs
+        : (BACKOFF_STEPS_MS[Math.min(consecutiveFails, BACKOFF_STEPS_MS.length - 1)] ?? intervalMs);
+      timer.current = setTimeout(() => void pollRef.current?.(), delay);
+    },
+    [intervalMs],
+  );
+
+  const poll = useCallback(async () => {
     try {
       const state = await api.getState();
       setData(state);
       setError(null);
+      failCount.current = 0;
       if (!hasLoadedOnce.current) {
         hasLoadedOnce.current = true;
-        setLoadedFlag(true); // trigger re-render so isLoading flips to false
+        setLoadedFlag(true);
       }
+      scheduleNext(0);
     } catch (err) {
-      // Keep previous data — only update the error banner
-      setError(err instanceof Error ? err.message : String(err));
-      // If this is the very first call and it failed, hasLoadedOnce stays false
-      // so the loading screen remains (we have nothing to show yet).
+      const msg = err instanceof Error ? err.message : String(err);
+      failCount.current += 1;
+      setError(msg);
+      // After MAX_FIRST_LOAD_FAILURES on first load, surface the error
+      // so the user sees a retry button instead of the spinner forever.
+      if (!hasLoadedOnce.current && failCount.current >= MAX_FIRST_LOAD_FAILURES) {
+        hasLoadedOnce.current = true;
+        setLoadedFlag(true);
+      }
+      scheduleNext(failCount.current);
     }
-  }, []);
+  }, [scheduleNext]);
+
+  // Keep ref up to date so the scheduled timeout always calls the latest version.
+  useEffect(() => {
+    pollRef.current = poll;
+  }, [poll]);
+
+  const refresh = useCallback(async () => {
+    if (timer.current) clearTimeout(timer.current);
+    failCount.current = 0;
+    await poll();
+  }, [poll]);
 
   useEffect(() => {
-    void refresh();
-    timer.current = setInterval(() => void refresh(), intervalMs);
-    const onFocus = () => void refresh();
+    void poll();
+    const onFocus = () => {
+      if (timer.current) clearTimeout(timer.current);
+      void poll();
+    };
     window.addEventListener('focus', onFocus);
     return () => {
-      if (timer.current) clearInterval(timer.current);
+      if (timer.current) clearTimeout(timer.current);
       window.removeEventListener('focus', onFocus);
     };
-  }, [refresh, intervalMs]);
+  }, [poll]);
 
-  // Loading is true only while we have never received a successful response.
   const loading = !hasLoadedOnce.current && !loadedFlag;
   const hasData = !!data?.ledger;
 
