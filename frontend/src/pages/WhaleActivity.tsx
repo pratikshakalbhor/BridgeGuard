@@ -25,7 +25,7 @@ export function WhaleActivity() {
 
   if (!state) {
     return loading ? (
-      <EmptyState title="Loading registry…" body="Fetching activity from the indexer." />
+      <EmptyState title="Connecting to BridgeGuard…" body="Reading bridge state from the Midnight contract. The backend may take up to 60 s to wake up on first visit — please wait." />
     ) : (
       <ErrorComponent message={error ?? 'Unable to reach the BridgeGuard backend.'} onRetry={refresh} />
     );

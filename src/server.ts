@@ -218,13 +218,23 @@ let lastSyncCheck = 'Not started';
 // UI can show a genuine "last on-chain tx" reference instead of placeholder data.
 const lastTxByBridge = new Map<string, string>();
 
-// Standalone public data provider for reading indexer contract state before backend wallet init
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 const standalonePublicDataProvider = indexerPublicDataProvider(networkConfig.indexer, networkConfig.indexerWS);
 
 async function readLedger() {
   try {
     const dataProvider = providers?.publicDataProvider ?? standalonePublicDataProvider;
-    const contractState = await dataProvider.queryContractState(deploymentAddress);
+    const contractState = await withTimeout(
+      dataProvider.queryContractState(deploymentAddress),
+      6000,
+      null,
+    );
     if (!contractState) return null;
     return BridgeGuardV2.ledger(contractState.data);
   } catch (err) {
@@ -232,6 +242,7 @@ async function readLedger() {
     return null;
   }
 }
+
 
 async function currentBalance() {
   const s = await Rx.firstValueFrom(walletCtx!.wallet.state());
@@ -522,13 +533,6 @@ async function handlerPocFinalize(body: any) {
 }
 
 // ─── Health probe (real connectivity, no placeholders) ───────────────────────
-
-function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
-  ]);
-}
 
 async function handlerHealth() {
   const services: Array<{ name: string; url: string; healthy: boolean; detail: string }> = [
@@ -826,7 +830,7 @@ async function main() {
         console.log('[/api/state] handler entered, deploymentAddress:', deploymentAddress || '(empty!)');
         let ledger: any = null;
         try {
-          ledger = await readLedger();
+          ledger = await withTimeout(readLedger(), 8000, null);
         } catch (rlErr: any) {
           console.error('[/api/state] readLedger() threw:', rlErr?.message ?? rlErr);
           return json(res, 500, { error: 'readLedger failed', detail: String(rlErr?.message ?? rlErr) });

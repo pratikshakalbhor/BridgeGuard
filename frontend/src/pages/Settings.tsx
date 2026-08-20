@@ -92,7 +92,7 @@ export function Settings() {
 
   if (!state) {
     return loading ? (
-      <EmptyState title="Loading registry…" body="Connecting to the BridgeGuard backend." />
+      <EmptyState title="Connecting to BridgeGuard…" body="Reading bridge state from the Midnight contract. The backend may take up to 60 s to wake up on first visit — please wait." />
     ) : (
       <ErrorComponent message={error ?? 'Unable to reach the BridgeGuard backend.'} onRetry={refresh} />
     );
