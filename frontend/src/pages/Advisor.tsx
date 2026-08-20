@@ -11,7 +11,7 @@ import { ErrorComponent } from '@/components/ErrorComponent';
 import { useAppData } from '@/hooks/useAppData';
 import { useWallet } from '@/hooks/useWallet';
 import { assessBridge, publicRecommendationFor, type Assessment } from '@/utils/riskEngine';
-import { evaluateBridge } from '@/services/midnight';
+import { evaluateBridgeWithWallet } from '@/services/midnight';
 import { chainName } from '@/utils/constants';
 import { loadPreferences } from '@/utils/preferences';
 import { cn, fmtCompact } from '@/utils/format';
@@ -24,7 +24,7 @@ interface RankResult {
 
 export function Advisor() {
   const { state, loading, error: dataError, refresh } = useAppData();
-  const { address: walletAddress } = useWallet();
+  const { status: walletStatus } = useWallet();
   const bridges = state?.ledger.bridges ?? [];
 
   const [amount, setAmount] = useState('250000');
@@ -42,6 +42,12 @@ export function Advisor() {
   );
 
   const runAnalysis = async () => {
+    if (walletStatus !== 'connected') {
+      toast.error('Connect your Midnight wallet first', {
+        description: 'Proofs are generated locally in your browser — the connected wallet proves each evaluation.',
+      });
+      return;
+    }
     const amountNum = Number(amount) || 0;
     const matches = bridges.filter(
       (b) => b.srcChain === srcChain && b.dstChain === dstChain,
@@ -49,24 +55,25 @@ export function Advisor() {
     const pool = matches.length > 0 ? matches : bridges;
     setAnalyzing(true);
     try {
-      // Real on-chain ranking: run the private evaluateBridge circuit for every
-      // candidate so only the disclosed verdicts drive the order.
+      // Real on-chain ranking: run the private evaluateBridge circuit locally
+      // in the browser (via the connected wallet) for every candidate so only
+      // the disclosed verdicts drive the order. Private amount/maxRisk/intel
+      // never leave the browser.
       const ranked: RankResult['ranked'] = [];
       for (const b of pool) {
         try {
-          const res = await evaluateBridge({
+          const res = await evaluateBridgeWithWallet({
             bridgeId: b.id,
             amount: String(amountNum),
             maxRisk,
             intel,
-            walletAddress: walletAddress ?? undefined,
           });
           const local = assessBridge(b, amountNum, maxRisk, intel);
           ranked.push({
             bridge: b,
             assessment: {
               ...local,
-              verdict: Number(res.verdict ?? local.verdict),
+              verdict: res.verdict !== null ? Number(res.verdict) : local.verdict,
               verdictLabel: res.verdictLabel ?? local.verdictLabel,
               within: res.within ?? local.within,
             },
@@ -162,7 +169,7 @@ export function Advisor() {
           <Button
             size="lg"
             loading={analyzing}
-            disabled={bridges.length === 0}
+            disabled={bridges.length === 0 || walletStatus !== 'connected'}
             onClick={async () => {
               toast.info(
                 `Running ${bridges.length} private on-chain evaluations…`,

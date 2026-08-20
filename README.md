@@ -2,7 +2,7 @@
 
 **Privacy-preserving bridge risk evaluation on the Midnight Network (Preview & Preprod Testnets).**
 
-BridgeGuard AI is a decentralized bridge risk evaluation system built on the Midnight Network using Compact Smart Contracts, React, TypeScript, and the Midnight.js SDK. Users can evaluate cross-chain bridge risk using public bridge information combined with sensitive user inputs inside a Midnight Zero-Knowledge circuit, and write only a coarse risk verdict to the public ledger. Under this model, the backend acts as a trusted prover and sees the private inputs (amount, maxRisk, and intel) during transaction preparation. However, these sensitive inputs remain undisclosed on the public blockchain ledger, and only the coarse verdict and tolerance-fit result are written on-chain as public ledger state.
+BridgeGuard AI is a decentralized bridge risk evaluation system built on the Midnight Network using Compact Smart Contracts, React, TypeScript, and the Midnight.js SDK. Users can evaluate cross-chain bridge risk using public bridge information combined with sensitive user inputs inside a Midnight Zero-Knowledge circuit, and write only a coarse risk verdict to the public ledger. The zero-knowledge proof is generated locally in the browser through the connected Midnight wallet via the Midnight.js SDK; the private inputs (amount, maxRisk, and intel) never leave the user's device and are never sent to the backend. Only the coarse verdict and tolerance-fit result are written on-chain as public ledger state.
 
 > **Important:** BridgeGuard AI is **NOT itself a cross-chain bridge.** It does **not** transfer assets from one chain to another. The actual asset transfer is performed by the selected external cross-chain bridge. BridgeGuard AI works as a security / risk-evaluation layer that runs *before* the bridge is used.
 
@@ -40,7 +40,8 @@ BridgeGuard AI evaluates bridge risk using **public bridge information** (TVL, a
 * ⚖️ **Private ZK Evaluation**: Run the `evaluateBridge()` circuit to verify if a bridge meets the user's risk tolerance.
 * 🚨 **Incident Prevention**: Allows operators to flag bridges or mark them compromised in real time via the `flagBridge()` circuit.
 * 🌐 **Persistent UI**: React SPA with persistent Midnight wallet connection (1AM preferred, Lace supported) via the official Midnight DApp Connector API.
-* ⚡ **Node.js REST API**: Backend API acts as the trusted prover for ZK proof generation.
+* ⚡ **Node.js REST API**: Backend API serves public registry/ledger state (deployment tooling only; it is not a prover).
+* 🖥️ **Browser-Local Proving**: ZK proofs are generated locally in the browser through the connected Midnight wallet via the Midnight.js SDK — no server-side proof generation.
 * 🧪 **Comprehensive Tests**: 16/16 smart contract simulator tests passing.
 
 ---
@@ -68,15 +69,16 @@ Users who want to move assets across chains need to judge whether a bridge is sa
 ```
   React Frontend (Vite)
         │
-        ▼
-  REST API Server (Node.js) ──▶ 1AM Wallet (Signs and submits)
-        │
-        ├─── Midnight JS SDK ──▶ Midnight Network (RPC / Indexer)
-        │                              │
-        │                        Compact Smart Contract
-        │                        (bridgeguard-v2.compact)
-        │
-        └─── ZK Proof Server (Docker) — generates ZK proofs locally
+        ├── 1AM / Lace Wallet (proves + signs + submits locally)
+        │         │
+        │         ├── Midnight JS SDK (dappConnectorProofProvider)
+        │         └── ZK artifacts served from /zk (prover keys + ZKIR)
+        │                     │
+        ▼                     ▼
+  REST API Server (Node.js)   Midnight Network (RPC / Indexer)
+        │                     │
+        └── registry/state   Compact Smart Contract
+                             (bridgeguard-v2.compact)
 ```
 
 ---
@@ -117,7 +119,7 @@ The `evaluateBridge()` circuit proves that combining the public bridge parameter
 | **Frontend** | React 18 + TypeScript + Vite 6 + Tailwind CSS |
 | **Backend** | Node.js + REST API (`src/server.ts`) |
 | **Wallet** | Midnight wallets (1AM preferred, Lace supported) via Midnight DApp Connector API (`window.midnight`) |
-| **ZK Proofs** | Midnight Proof Server (Docker, port 6300) |
+| **ZK Proofs** | Browser-local via Midnight wallet + Midnight.js SDK (dappConnectorProofProvider / FetchZkConfigProvider) |
 | **Testing** | Vitest (`tests/bridgeguard.test.ts`) |
 
 ---
@@ -146,7 +148,7 @@ npm --prefix frontend install
 docker compose up -d --wait
 ```
 
-This starts the `midnight-proof-server` at `http://127.0.0.1:6300` for local proof generation.
+This starts the `midnight-proof-server` at `http://127.0.0.1:6300`. This is **development/deployment tooling only** (e.g. the simulator tests and Node-based deploy tooling) — the production frontend generates proofs locally in the browser and never calls the proof server.
 
 ### Compile the Smart Contract
 
@@ -262,7 +264,7 @@ Test coverage includes:
 | Midnight Preprod Testnet | ✅ Deployed |
 | REST API | 🧪 Verified locally / production currently initializing |
 | React Frontend | 🚀 Deployed on Vercel |
-| ZK Proof Generation | 🧪 Verified locally |
+| ZK Proof Generation | 🧪 Verified locally (browser via Midnight wallet + Midnight.js SDK) |
 | Wallet Integration | 🧪 Verified on Midnight Preview |
 
 ---
@@ -284,7 +286,7 @@ The Bridge Analysis page runs a confidential zero-knowledge evaluation for the s
 1. **Connect Wallet** — Connect a Midnight wallet (1AM preferred on Preprod, Lace supported) in the UI.
 2. **Select Bridge** — Select a registered bridge route from the public registry.
 3. **Risk Evaluation** — Input transfer amount, maximum risk tolerance, and private intel.
-4. **Generate Proof** — The backend prepares the unsealed transaction and generates the ZK proof using the proof-server.
+4. **Generate Proof (in browser)** — The frontend loads the ZK artifacts (`/zk/keys` + `/zk/zkir`) and asks the connected Midnight wallet to generate the zero-knowledge proof locally via the Midnight.js SDK (`dappConnectorProofProvider`). No private input leaves the browser.
 5. **Wallet Signing & Fees** — The connected Midnight wallet balances the transaction, pays the DUST fee, prompts the user for approval, and submits it to the network.
 6. **On-chain Verdict** — The transaction writes the coarse verdict on-chain and the frontend reads it back for display.
 
@@ -393,16 +395,19 @@ bridgeguard-ai/
 │   ├── vite.config.ts                # Vite dev server + /api proxy
 │   └── src/
 │       ├── pages/
-│       │   ├── BridgeAnalysis.tsx    # ZK evaluation UI (wallet-signed + fallback)
+│       │   ├── BridgeAnalysis.tsx    # ZK evaluation UI (wallet-signed, browser-local proving)
 │       │   └── WalletConnection.tsx  # Wallet connect/disconnect UI
 │       ├── hooks/useWallet.tsx       # Wallet state hooks
 │       ├── services/
 │       │   ├── wallet.ts             # 1AM detection + DApp Connector session
 │       │   ├── midnight.ts           # Contract SDK layer & wallet-signed evaluations
-│       │   └── api.ts                # Backend API client
+│       │   ├── browserProof.ts       # Browser-local ZK proving (Midnight.js SDK)
+│       │   └── api.ts                # Backend API client (registry/state only)
+│       ├── shim/
+│       │   └── isomorphic-ws.ts      # Browser WebSocket shim for the indexer provider
 │       └── utils/riskEngine.ts       # Risk score definitions
 ├── src/
-│   ├── server.ts                     # Node backend & trusted prover
+│   ├── server.ts                     # Node backend (registry/state, dev tooling — not a prover)
 │   ├── witnesses-v2.ts               # Private state witnesses
 │   └── deploy-v2.ts                  # Deploy pipeline
 ├── tests/
@@ -435,16 +440,17 @@ For production/demo hosting under Level 2, the app is deployed in a decoupled ar
   * `PORT`: Automatically assigned by Render.
   * `NODE_ENV`: `production`
 
-### C. Proof Server (Render Private Service)
+### C. Proof Server (Render Private Service) — dev tooling only
 * **Hosting:** A separate private service container deployed on Render using the public image `midnightntwrk/proof-server:8.1.0` with the start command `midnight-proof-server -v`.
 * **Port Configuration:** Expose port `6300` internally via private networking. **Do NOT generate a public domain** or expose port `6300` to the internet. The backend connects through the Render private/internal hostname provided by Render.
+* **Note:** The production frontend does **not** call the proof server. It is used only by the Node-based deployment tooling and contract tests. Production ZK proofs are generated locally in the browser via the connected Midnight wallet.
 
 ---
 
 ## ⚠️ Important Limitations
 
-* The **backend acts as a trusted prover** and sees the private inputs during transaction preparation.
-* The project protects sensitive inputs from **public ledger disclosure**; it does not claim end-to-end browser-only privacy.
+* The **frontend generates ZK proofs locally in the browser** through the connected Midnight wallet. The backend never receives the private inputs (`amount`, `maxRisk`, `intel`); it serves only public registry/ledger state.
+* The Node-based backend/deploy tooling still uses the local proof server for contract deployment and simulator tests; it does not handle end-user evaluations.
 * **AI / risk analysis and ZK proof generation are separate responsibilities.** The AI Transfer Advisor is a transparent rule-based decision-support engine — it does not generate ZK proofs and is not backed by an LLM. The Midnight circuit and proving infrastructure generate the proofs.
 * The confidential intel feed is currently user-provided through the UI; it is not yet connected to an external intelligence provider.
 

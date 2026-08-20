@@ -15,7 +15,7 @@ import { useWallet } from '@/hooks/useWallet';
 import { assessBridge, publicRecommendationFor, type Assessment } from '@/utils/riskEngine';
 import { CHAIN_IDS, chainName } from '@/utils/constants';
 import { cn, fmtCompact, shortAddress } from '@/utils/format';
-import { getSecurityStatus, evaluateBridge, evaluateBridgeWithWallet } from '@/services/midnight';
+import { getSecurityStatus, evaluateBridgeWithWallet } from '@/services/midnight';
 import { BRIDGEGUARD_NETWORK_ID, networkLabel } from '@/services/wallet';
 import type { WalletSignStep } from '@/services/midnight';
 import { loadPreferences } from '@/utils/preferences';
@@ -42,14 +42,13 @@ export function BridgeAnalysis() {
     blockHeight: string | null;
     walletAddress?: string | null;
     status: 'confirmed' | 'pending';
-    signing: 'wallet' | 'server';
+    signing: 'wallet';
   } | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [justDone, setJustDone] = useState(false);
-  // Who signs the evaluation transaction: the connected Midnight wallet
-  // (POC pipeline: backend proves → wallet balances/signs/pays DUST) or the
-  // backend service wallet (/api/evaluate, kept as the fallback path).
-  const [signingMode, setSigningMode] = useState<'wallet' | 'server'>('wallet');
+  // Evaluation always runs through the connected Midnight wallet: the ZK proof
+  // is generated locally in the browser (Midnight.js SDK) and the wallet
+  // balances, signs and pays the DUST fee.
   const [walletStep, setWalletStep] = useState<WalletSignStep | null>(null);
   const [walletStepMessage, setWalletStepMessage] = useState<string | null>(null);
 
@@ -96,9 +95,9 @@ export function BridgeAnalysis() {
       });
       return;
     }
-    if (signingMode === 'wallet' && walletStatus !== 'connected') {
+    if (walletStatus !== 'connected') {
       toast.error('Connect your Midnight wallet first', {
-        description: 'Wallet signing needs an active connection — use "Server (fallback)" signing instead.',
+        description: 'Evaluation requires local proof generation in your browser — use the "Connect wallet" button.',
       });
       return;
     }
@@ -119,48 +118,35 @@ export function BridgeAnalysis() {
       let verdictLabel: string | null = null;
       let within: boolean | null = null;
 
-      if (signingMode === 'wallet') {
-        // Wallet-signed path (Phase 0 POC pipeline): the backend builds the
-        // unproven call tx and generates the ZK proof; the connected wallet
-        // balances, signs and pays the DUST fee; the backend watches the
-        // indexer and reads back the disclosed coarse verdict.
-        const wres = await evaluateBridgeWithWallet(
-          {
-            bridgeId: bridge.id,
-            amount: String(Number(amount) || 0),
-            maxRisk,
-            intel,
-          },
-          (step, message) => {
-            setWalletStep(step);
-            setWalletStepMessage(message);
-          },
-        );
-        txId = wres.txId;
-        blockHeight = wres.blockHeight ?? null;
-        txState = wres.status;
-        verdict = wres.verdict !== null ? Number(wres.verdict) : null;
-        verdictLabel = wres.verdictLabel;
-        within = wres.within;
-      } else {
-        // Server-signed fallback (/api/evaluate): the backend feeds the
-        // confidential intel into the private state, runs the evaluateBridge
-        // circuit, and discloses only the coarse verdict.
-        const res = await evaluateBridge({
+      if (walletStatus !== 'connected') {
+        throw new Error('Wallet disconnected — reconnect to generate the proof locally.');
+      }
+
+      // Browser-local proving path: the browser creates the unproven call tx,
+      // the connected wallet generates the ZK proof locally, balances, signs
+      // and pays the DUST fee; the browser watches the indexer and reads back
+      // the disclosed coarse verdict. Private amount/maxRisk/intel never leave
+      // the browser.
+      const wres = await evaluateBridgeWithWallet(
+        {
           bridgeId: bridge.id,
           amount: String(Number(amount) || 0),
           maxRisk,
           intel,
-          walletAddress: walletAddress ?? undefined,
-        });
-        txId = res.txId;
-        blockHeight = res.blockHeight;
-        verdict = res.verdict !== null ? Number(res.verdict) : null;
-        verdictLabel = res.verdictLabel;
-        within = res.within;
-      }
+        },
+        (step, message) => {
+          setWalletStep(step);
+          setWalletStepMessage(message);
+        },
+      );
+      txId = wres.txId;
+      blockHeight = wres.blockHeight ?? null;
+      txState = wres.status;
+      verdict = wres.verdict !== null ? Number(wres.verdict) : null;
+      verdictLabel = wres.verdictLabel;
+      within = wres.within;
 
-      setTxStatus({ txId, blockHeight, walletAddress: walletAddress ?? null, status: txState, signing: signingMode });
+      setTxStatus({ txId, blockHeight, walletAddress: walletAddress ?? null, status: txState, signing: 'wallet' });
 
       if (txState === 'confirmed') {
         const assessment: Assessment = {
@@ -177,15 +163,12 @@ export function BridgeAnalysis() {
 
       setJustDone(true);
       setTimeout(() => setJustDone(false), 2200);
-      toast.success(
-        signingMode === 'wallet' ? 'Evaluation submitted via your wallet' : `Verdict: ${verdictLabel ?? local.verdictLabel}`,
-        {
-          description:
-            txState === 'confirmed'
-              ? `${bridge.name} · tx ${txId.slice(0, 10)}…`
-              : `${bridge.name} · submitted, awaiting indexer confirmation (tx ${txId.slice(0, 10)}…)`,
-        },
-      );
+      toast.success('Evaluation submitted via your wallet', {
+        description:
+          txState === 'confirmed'
+            ? `${bridge.name} · tx ${txId.slice(0, 10)}…`
+            : `${bridge.name} · submitted, awaiting indexer confirmation (tx ${txId.slice(0, 10)}…)`,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       toast.error('Analysis failed', {
@@ -318,56 +301,20 @@ export function BridgeAnalysis() {
             <Button
               onClick={analyze}
               loading={running}
-              disabled={
-                !selectedBridge ||
-                running ||
-                (signingMode === 'wallet' && walletStatus !== 'connected')
-              }
+              disabled={!selectedBridge || running || walletStatus !== 'connected'}
               size="lg"
             >
               <FiSearch className="size-4" />
-              {signingMode === 'wallet' ? 'Analyze with my wallet' : 'Analyze (server-signed)'}
+              Analyze with my wallet
             </Button>
-            <div
-              className="flex items-center rounded-xl border border-slate-200 p-1 dark:border-white/[0.07]"
-              role="group"
-              aria-label="Transaction signing"
-            >
-              <button
-                type="button"
-                onClick={() => setSigningMode('wallet')}
-                className={cn(
-                  'rounded-lg px-3 py-1.5 text-xs font-medium transition',
-                  signingMode === 'wallet'
-                    ? 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-300'
-                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
-                )}
-              >
-                My wallet
-              </button>
-              <button
-                type="button"
-                onClick={() => setSigningMode('server')}
-                className={cn(
-                  'rounded-lg px-3 py-1.5 text-xs font-medium transition',
-                  signingMode === 'server'
-                    ? 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-300'
-                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
-                )}
-              >
-                Server (fallback)
-              </button>
-            </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {signingMode === 'wallet'
-                ? walletStatus === 'connected'
-                  ? `Your ${walletSession?.walletName ?? 'Midnight'} wallet signs the proof transaction on ${networkLabel(BRIDGEGUARD_NETWORK_ID)} and pays the DUST fee; only the coarse verdict becomes public.`
-                  : 'Connect your Midnight wallet to sign here — otherwise use the server-signed fallback.'
-                : 'The backend signs the transaction with the service wallet (fallback path).'}
+              {walletStatus === 'connected'
+                ? `Your ${walletSession?.walletName ?? 'Midnight'} wallet generates the zero-knowledge proof locally in your browser on ${networkLabel(BRIDGEGUARD_NETWORK_ID)}; the wallet balances, signs and pays the DUST fee. Only the coarse verdict becomes public.`
+                : 'Connect your Midnight wallet — the zero-knowledge proof is generated locally in your browser, never on a server.'}
             </p>
           </div>
 
-          {running && signingMode === 'wallet' && walletStep && (
+          {running && walletStep && (
             <div className="mt-4 flex items-center gap-3 rounded-xl border border-cyan-400/30 bg-cyan-400/5 px-4 py-3 text-xs text-cyan-600 dark:text-cyan-300">
               <LoadingSpinner className="size-4 shrink-0" />
               <span>{walletStepMessage ?? 'Processing…'}</span>
@@ -408,7 +355,7 @@ export function BridgeAnalysis() {
           <span className="font-mono">
             tx {shortAddress(txStatus.txId, 10, 6)}
             {txStatus.blockHeight ? ` · block ${txStatus.blockHeight}` : ' · pending'}
-            {txStatus.signing === 'wallet' ? ' · signed by wallet' : ' · signed by server'}
+            {txStatus.signing === 'wallet' ? ' · signed by wallet' : ''}
           </span>
           {txStatus.walletAddress && (
             <span className="font-mono">from {shortAddress(txStatus.walletAddress, 8, 6)}</span>

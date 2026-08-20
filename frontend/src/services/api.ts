@@ -69,49 +69,9 @@ export interface TxResult {
   walletAddress?: string | null;
 }
 
-export interface EvaluateResult extends TxResult {
-  bridgeId: string;
-  intel: number;
-  verdict: string | null;
-  verdictLabel: string | null;
-  within: boolean | null;
-}
-
 export interface FlagResult extends TxResult {
   bridgeId: string;
   status: string;
-}
-
-/**
- * Result of the backend half of the wallet-signed evaluation pipeline
- * (`/api/poc/prepare-evaluate`): the backend builds the unproven call
- * transaction and generates the zero-knowledge proof, then hands the serialized
- * PUBLIC unbound transaction to the browser wallet for balancing/signing.
- * The private amount/maxRisk/intel never leave the backend.
- */
-export interface PrepareEvaluateResult {
-  circuit: string;
-  bridgeId: string;
-  serializedTxHex: string;
-  serializedTxBytes: number;
-  encoding: string;
-  note: string;
-}
-
-/** Result of `/api/poc/finalize` — tx identifier + indexer confirmation. */
-export interface FinalizeEvaluateResult {
-  txId: string;
-  txHash: string;
-  status: 'confirmed' | 'pending';
-  bridgeId: string | null;
-  blockHeight?: string;
-  blockHash?: string;
-  txStatus?: string;
-  blockTimestamp?: string;
-  verdict?: string | null;
-  verdictLabel?: string | null;
-  within?: boolean | null;
-  note?: string;
 }
 
 export interface ServiceHealth {
@@ -143,38 +103,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  evaluateBridge: (payload: {
-    bridgeId: string;
-    amount: string;
-    maxRisk: number;
-    intel: number;
-    walletAddress?: string;
-  }) =>
-    request<EvaluateResult>('/api/evaluate', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
   flagBridge: (payload: { bridgeId: string; status: number; walletAddress?: string }) =>
     request<FlagResult>('/api/flag', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-  /**
-   * Backend half of the wallet-signed evaluation: prove + serialize. The
-   * returned hex is the PUBLIC unbound transaction the browser wallet then
-   * balances, signs and submits (amount/maxRisk/intel stay server-side).
-   */
-  prepareEvaluate: (payload: { bridgeId: string; amount: string; maxRisk: number; intel: number }) =>
-    request<PrepareEvaluateResult>('/api/poc/prepare-evaluate', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-  /**
-   * Finalize half of the wallet-signed evaluation: derive the tx identifier from
-   * the balanced sealed tx hex and watch the indexer for confirmation.
-   */
-  finalizeEvaluate: (payload: { balancedTxHex: string; bridgeId?: string }) =>
-    request<FinalizeEvaluateResult>('/api/poc/finalize', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
