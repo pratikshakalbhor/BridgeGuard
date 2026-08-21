@@ -4,12 +4,8 @@ import { Landing } from '@/pages/Landing';
 import { Dashboard } from '@/pages/Dashboard';
 import { BridgeAnalysis } from '@/pages/BridgeAnalysis';
 import { Advisor } from '@/pages/Advisor';
-import { LiquidityMonitor } from '@/pages/LiquidityMonitor';
-import { WhaleActivity } from '@/pages/WhaleActivity';
-import { Alerts } from '@/pages/Alerts';
+import { Security } from '@/pages/Security';
 import { WalletConnection } from '@/pages/WalletConnection';
-import { Settings } from '@/pages/Settings';
-import { About } from '@/pages/About';
 import { NotFound } from '@/pages/NotFound';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { PageTransition } from '@/components/motion/PageTransition';
@@ -19,39 +15,23 @@ import { WalletProvider } from '@/hooks/useWallet';
 const PAGE_META: Record<string, { title: string; subtitle: string }> = {
   dashboard: {
     title: 'Dashboard',
-    subtitle: 'Registry, verdicts and liquidity at a glance',
+    subtitle: 'Bridge health overview, risk status & zero-knowledge security stats',
   },
   analyze: {
     title: 'Bridge Analysis',
-    subtitle: 'Confidential zero-knowledge risk evaluation',
+    subtitle: 'Confidential zero-knowledge risk evaluation & security verdicts',
   },
   advisor: {
-    title: 'AI Transfer Advisor',
-    subtitle: 'Find the safest route without revealing your amount',
+    title: 'Transfer Advisor',
+    subtitle: 'Route comparison & privacy-focused bridge recommendations',
   },
-  liquidity: {
-    title: 'Liquidity Monitor',
-    subtitle: 'Pool health and utilization across bridges',
-  },
-  whales: {
-    title: 'Whale Activity',
-    subtitle: 'Large cross-chain transfers in the last 24 hours',
-  },
-  alerts: {
-    title: 'Security Alerts',
-    subtitle: 'Incidents and intelligence from the on-chain registry',
+  security: {
+    title: 'Security',
+    subtitle: 'Alerts, incident feed, status flags & on-chain activity',
   },
   wallet: {
     title: 'Wallet',
-    subtitle: 'Midnight wallet connection and balances',
-  },
-  settings: {
-    title: 'Settings',
-    subtitle: 'Preferences, notifications and local privacy',
-  },
-  about: {
-    title: 'About',
-    subtitle: 'The project, the contract, and the stack',
+    subtitle: 'Midnight testnet connection, balances & network state',
   },
 };
 
@@ -109,26 +89,10 @@ function AnimatedRoutes() {
           }
         />
         <Route
-          path="/app/liquidity"
+          path="/app/security"
           element={
-            <AppPage page="liquidity">
-              <LiquidityMonitor />
-            </AppPage>
-          }
-        />
-        <Route
-          path="/app/whales"
-          element={
-            <AppPage page="whales">
-              <WhaleActivity />
-            </AppPage>
-          }
-        />
-        <Route
-          path="/app/alerts"
-          element={
-            <AppPage page="alerts">
-              <Alerts />
+            <AppPage page="security">
+              <Security />
             </AppPage>
           }
         />
@@ -140,22 +104,14 @@ function AnimatedRoutes() {
             </AppPage>
           }
         />
-        <Route
-          path="/app/settings"
-          element={
-            <AppPage page="settings">
-              <Settings />
-            </AppPage>
-          }
-        />
-        <Route
-          path="/app/about"
-          element={
-            <AppPage page="about">
-              <About />
-            </AppPage>
-          }
-        />
+
+        {/* Redirect merged/legacy routes */}
+        <Route path="/app/alerts" element={<Navigate to="/app/security" replace />} />
+        <Route path="/app/whales" element={<Navigate to="/app/security" replace />} />
+        <Route path="/app/liquidity" element={<Navigate to="/app/analyze" replace />} />
+        <Route path="/app/settings" element={<Navigate to="/app" replace />} />
+        <Route path="/app/about" element={<Navigate to="/app" replace />} />
+
         <Route path="/app/*" element={<Navigate to="/app" replace />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
