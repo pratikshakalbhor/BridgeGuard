@@ -265,9 +265,9 @@ const standalonePublicDataProvider = indexerPublicDataProvider(networkConfig.ind
 // serves the cache (marked stale) instead of 503, and the server never crashes
 // on indexer unavailability.
 
-const INDEXER_TIMEOUT_MS = 30_000;
-const INDEXER_MAX_ATTEMPTS = 3;
-const INDEXER_RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
+const INDEXER_TIMEOUT_MS = 10_000;
+const INDEXER_MAX_ATTEMPTS = 2;
+const INDEXER_RETRY_DELAYS_MS = [1_000];
 
 let ledgerCache: { ledger: any; fetchedAt: string } | null = null;
 
@@ -972,7 +972,7 @@ async function main() {
         // public contract state from the indexer only. A bounded retry +
         // backoff covers transient indexer failures, and the last successful
         // snapshot is served (marked stale) when the indexer is unavailable.
-        const fresh = await withTimeout(readLedger(), 90_000, null);
+        const fresh = await withTimeout(readLedger(), 25_000, null);
         if (fresh) {
           let serialized: any;
           try {
