@@ -133,11 +133,11 @@ export function Dashboard() {
 
   // ── Loading: only before the very first successful fetch ──────────────────
   if (loading) {
-    return <EmptyState title="Reading BridgeGuard state…" body="Fetching live bridge state directly from the Midnight contract indexer." />;
+    return <EmptyState title="Reading ZeroBridge state…" body="Fetching live bridge state directly from the Midnight contract indexer." />;
   }
   // ── No data at all after first fetch attempt ────────────────────────────────
   if (!hasData || !state) {
-    return <ErrorComponent message={error ?? 'Unable to reach the BridgeGuard backend.'} onRetry={refresh} />;
+    return <ErrorComponent message={error ?? 'Unable to reach the ZeroBridge backend.'} onRetry={refresh} />;
   }
 
   const { ledger, balance, walletAddress, network } = state;
@@ -148,7 +148,7 @@ export function Dashboard() {
       {stale && (
         <div className="flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2.5 text-xs font-medium text-amber-600 dark:text-amber-300">
           <span className="animate-pulse">⟳</span>
-          Reconnecting to BridgeGuard backend — showing last known data
+          Reconnecting to ZeroBridge backend — showing last known data
         </div>
       )}
       <Stagger className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

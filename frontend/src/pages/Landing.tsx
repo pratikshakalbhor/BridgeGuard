@@ -122,9 +122,7 @@ export function Landing() {
             className="mx-auto mt-6 max-w-2xl animate-fade-up text-base leading-relaxed text-slate-600 dark:text-slate-300 sm:text-lg"
             style={{ animationDelay: '160ms' }}
           >
-            BridgeGuard AI evaluates cross-chain bridge security, liquidity health and
-            transfer risk — then proves the verdict on the Midnight blockchain without
-            ever revealing your amounts or tolerance.
+            ZeroBridge provides privacy-preserving security for cross-chain DeFi. Evaluate bridge risk, verify liquidity health, and generate zero-knowledge verdicts on Midnight without exposing sensitive amounts or personal risk parameters.
           </p>
           <div
             className="mt-10 flex animate-fade-up flex-col items-center justify-center gap-3 sm:flex-row"
@@ -175,7 +173,7 @@ export function Landing() {
             Security intelligence you can verify, not just trust
           </h2>
           <p className="mt-4 text-slate-600 dark:text-slate-300">
-            Every claim BridgeGuard makes is grounded in on-chain facts and zero-knowledge
+            Every claim ZeroBridge makes is grounded in on-chain facts and zero-knowledge
             proofs — nothing to take on faith.
           </p>
         </div>

@@ -1,16 +1,16 @@
-# BridgeGuard AI v2
+# ZeroBridge
 
-**Privacy-preserving bridge risk evaluation on the Midnight Network (Preview & Preprod Testnets).**
+**Privacy-preserving security for cross-chain DeFi on the Midnight Network (Preview & Preprod Testnets).**
 
-BridgeGuard AI is a decentralized bridge risk evaluation system built on the Midnight Network using Compact Smart Contracts, React, TypeScript, and the Midnight.js SDK. Users can evaluate cross-chain bridge risk using public bridge information combined with sensitive user inputs inside a Midnight Zero-Knowledge circuit, and write only a coarse risk verdict to the public ledger. The zero-knowledge proof is generated locally in the browser through the connected Midnight wallet via the Midnight.js SDK; the private inputs (amount, maxRisk, and intel) never leave the user's device and are never sent to the backend. Only the coarse verdict and tolerance-fit result are written on-chain as public ledger state.
+ZeroBridge is a decentralized bridge risk evaluation system built on the Midnight Network using Compact Smart Contracts, React, TypeScript, and the Midnight.js SDK. Users can evaluate cross-chain bridge risk using public bridge information combined with sensitive user inputs inside a Midnight Zero-Knowledge circuit, and write only a coarse risk verdict to the public ledger. The zero-knowledge proof is generated locally in the browser through the connected Midnight wallet via the Midnight.js SDK; the private inputs (amount, maxRisk, and intel) never leave the user's device and are never sent to the backend. Only the coarse verdict and tolerance-fit result are written on-chain as public ledger state.
 
-> **Important:** BridgeGuard AI is **NOT itself a cross-chain bridge.** It does **not** transfer assets from one chain to another. The actual asset transfer is performed by the selected external cross-chain bridge. BridgeGuard AI works as a security / risk-evaluation layer that runs *before* the bridge is used.
+> **Important:** ZeroBridge is **NOT itself a cross-chain bridge.** It does **not** transfer assets from one chain to another. The actual asset transfer is performed by the selected external cross-chain bridge. ZeroBridge works as a security / risk-evaluation layer that runs *before* the bridge is used.
 
 ---
 
 ## 🌐 Live Demo & Midnight Deployments
 
-**Live Demo:** [Open BridgeGuard AI v2 Demo](https://bridge-guard-umber.vercel.app/)
+**Live Demo:** [Open ZeroBridge Demo](https://bridge-guard-umber.vercel.app/)
 
 | Level | Network | Contract Address | Purpose |
 | --- | --- | --- | --- |
@@ -29,7 +29,7 @@ a2d5d8370fab068fb95780cc40895a99c277a837bdc69a188ed404a8498cce1c
 
 ## 🎯 What This Does
 
-BridgeGuard AI evaluates bridge risk using **public bridge information** (TVL, audit status, incident counter, and status) combined with **sensitive user inputs** (private transfer amount and private risk tolerance) inside a **Midnight Zero-Knowledge circuit**, writing only a coarse risk verdict (`LOW / MEDIUM / HIGH / CRITICAL`) and a tolerance-fit result to the public ledger.
+ZeroBridge evaluates bridge risk using **public bridge information** (TVL, audit status, incident counter, and status) combined with **sensitive user inputs** (private transfer amount and private risk tolerance) inside a **Midnight Zero-Knowledge circuit**, writing only a coarse risk verdict (`LOW / MEDIUM / HIGH / CRITICAL`) and a tolerance-fit result to the public ledger.
 
 ---
 
@@ -48,7 +48,7 @@ BridgeGuard AI evaluates bridge risk using **public bridge information** (TVL, a
 
 ## 💳 Wallet Integration
 
-BridgeGuard AI connects to Midnight wallets through the official **Midnight DApp Connector API** injected into `window.midnight`. Compatible wallets are detected dynamically by capability, rdns and display name — no single wallet vendor is hard-coded.
+ZeroBridge connects to Midnight wallets through the official **Midnight DApp Connector API** injected into `window.midnight`. Compatible wallets are detected dynamically by capability, rdns and display name — no single wallet vendor is hard-coded.
 
 For the current **Level 2 Midnight Preprod** testing the wallet selection priority is:
 
@@ -60,7 +60,7 @@ For the current **Level 2 Midnight Preprod** testing the wallet selection priori
 
 ## 💡 Initial Product Idea
 
-Users who want to move assets across chains need to judge whether a bridge is safe to use. Simply asking a public service "is this transfer risky?" normally means revealing sensitive evaluation inputs: the transfer amount, the user's risk tolerance, and confidential intelligence feeds. BridgeGuard AI solves this by keeping these sensitive inputs off-chain, computing a secure liability/exposure score compared to bridge TVL inside a private ZK circuit, and disclosing only a simple, coarse public verdict tier on-chain.
+Users who want to move assets across chains need to judge whether a bridge is safe to use. Simply asking a public service "is this transfer risky?" normally means revealing sensitive evaluation inputs: the transfer amount, the user's risk tolerance, and confidential intelligence feeds. ZeroBridge solves this by keeping these sensitive inputs off-chain, computing a secure liability/exposure score compared to bridge TVL inside a private ZK circuit, and disclosing only a simple, coarse public verdict tier on-chain.
 
 ---
 

@@ -195,9 +195,9 @@ export function BridgeAnalysis() {
 
   if (!state) {
     return loading ? (
-      <EmptyState title="Reading BridgeGuard state…" body="Fetching live bridge state directly from the Midnight contract indexer." />
+      <EmptyState title="Reading ZeroBridge state…" body="Fetching live bridge state directly from the Midnight contract indexer." />
     ) : (
-      <ErrorComponent message={dataError ?? 'Unable to reach the BridgeGuard backend.'} onRetry={refresh} />
+      <ErrorComponent message={dataError ?? 'Unable to reach the ZeroBridge backend.'} onRetry={refresh} />
     );
   }
 
@@ -438,7 +438,7 @@ export function BridgeAnalysis() {
                     accent: 'text-cyan-500',
                   },
                   {
-                    label: 'BridgeGuard Scans Bridge',
+                    label: 'ZeroBridge Scans Bridge',
                     detail: scanned
                       ? `Registry data: TVL $${fmtCompact(selectedBridge!.tvl)} · ${selectedBridge!.incidents} incidents`
                       : 'On-chain registry analysis',

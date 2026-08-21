@@ -12,6 +12,7 @@ import {
   BrainCircuit,
   ShieldAlert,
   Wallet,
+  Info,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -22,19 +23,31 @@ import { Logo } from '@/components/Logo';
 import { WalletSelectModal } from '@/components/WalletSelectModal';
 import { cn, shortAddress } from '@/utils/format';
 
-interface NavItem {
+interface NavRouteItem {
+  type: 'route';
   to: string;
   label: string;
   icon: typeof LayoutDashboard;
   end?: boolean;
 }
 
+interface NavActionItem {
+  type: 'action';
+  id: 'settings' | 'about';
+  label: string;
+  icon: typeof Settings;
+}
+
+type NavItem = NavRouteItem | NavActionItem;
+
 const NAV_ITEMS: NavItem[] = [
-  { to: '/app', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/app/analyze', label: 'Bridge Analysis', icon: FlaskConical },
-  { to: '/app/advisor', label: 'Transfer Advisor', icon: BrainCircuit },
-  { to: '/app/security', label: 'Security', icon: ShieldAlert },
-  { to: '/app/wallet', label: 'Wallet', icon: Wallet },
+  { type: 'route', to: '/app', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { type: 'route', to: '/app/analyze', label: 'Bridge Analysis', icon: FlaskConical },
+  { type: 'route', to: '/app/advisor', label: 'Transfer Advisor', icon: BrainCircuit },
+  { type: 'route', to: '/app/security', label: 'Security', icon: ShieldAlert },
+  { type: 'route', to: '/app/wallet', label: 'Wallet', icon: Wallet },
+  { type: 'action', id: 'settings', label: 'Settings', icon: Settings },
+  { type: 'action', id: 'about', label: 'About', icon: Info },
 ];
 
 interface AppNavbarProps {
@@ -87,37 +100,53 @@ export function AppNavbar({ live, onOpenSettings }: AppNavbarProps) {
             </Link>
           </div>
 
-          {/* Center: Desktop Nav */}
+          {/* Center: Desktop Nav (All 7 Navigation Items) */}
           <nav className="hidden lg:flex items-center gap-1">
-            {NAV_ITEMS.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  cn(
-                    'relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
-                    isActive
-                      ? 'text-cyan-600 dark:text-cyan-300'
-                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
-                  )
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    <item.icon className={cn('size-4', isActive ? 'text-cyan-500' : 'text-slate-400')} />
-                    {item.label}
-                    {isActive && (
-                      <motion.span
-                        layoutId="nav-indicator"
-                        className="absolute inset-x-1 -bottom-[13px] h-[2px] rounded-full bg-gradient-to-r from-cyan-400 to-violet-500"
-                        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                      />
+            {NAV_ITEMS.map((item) => {
+              if (item.type === 'route') {
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    className={({ isActive }) =>
+                      cn(
+                        'relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
+                        isActive
+                          ? 'text-cyan-600 dark:text-cyan-300'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
+                      )
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <item.icon className={cn('size-4', isActive ? 'text-cyan-500' : 'text-slate-400')} />
+                        {item.label}
+                        {isActive && (
+                          <motion.span
+                            layoutId="nav-indicator"
+                            className="absolute inset-x-1 -bottom-[13px] h-[2px] rounded-full bg-gradient-to-r from-cyan-400 to-violet-500"
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                          />
+                        )}
+                      </>
                     )}
-                  </>
-                )}
-              </NavLink>
-            ))}
+                  </NavLink>
+                );
+              }
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-all duration-200 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white cursor-pointer"
+                >
+                  <item.icon className="size-4 text-slate-400" />
+                  {item.label}
+                </button>
+              );
+            })}
           </nav>
 
           {/* Right: Controls */}
@@ -176,7 +205,7 @@ export function AppNavbar({ live, onOpenSettings }: AppNavbarProps) {
               </Button>
             )}
 
-            {/* Settings gear */}
+            {/* Settings gear icon */}
             <button
               type="button"
               onClick={onOpenSettings}
@@ -230,32 +259,50 @@ export function AppNavbar({ live, onOpenSettings }: AppNavbarProps) {
                 </button>
               </div>
               <nav className="p-3 space-y-1">
-                {NAV_ITEMS.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.end}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={({ isActive }) =>
-                      cn(
-                        'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all',
-                        isActive
-                          ? 'bg-gradient-to-r from-cyan-500/15 to-violet-500/10 text-cyan-600 dark:text-cyan-300 font-semibold'
-                          : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5',
-                      )
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        <item.icon className={cn('size-5', isActive ? 'text-cyan-500' : 'text-slate-400')} />
-                        {item.label}
-                      </>
-                    )}
-                  </NavLink>
-                ))}
+                {NAV_ITEMS.map((item) => {
+                  if (item.type === 'route') {
+                    return (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        end={item.end}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={({ isActive }) =>
+                          cn(
+                            'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all',
+                            isActive
+                              ? 'bg-gradient-to-r from-cyan-500/15 to-violet-500/10 text-cyan-600 dark:text-cyan-300 font-semibold'
+                              : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5',
+                          )
+                        }
+                      >
+                        {({ isActive }) => (
+                          <>
+                            <item.icon className={cn('size-5', isActive ? 'text-cyan-500' : 'text-slate-400')} />
+                            {item.label}
+                          </>
+                        )}
+                      </NavLink>
+                    );
+                  }
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        onOpenSettings();
+                      }}
+                      className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 cursor-pointer"
+                    >
+                      <item.icon className="size-5 text-slate-400" />
+                      {item.label}
+                    </button>
+                  );
+                })}
               </nav>
               <div className="border-t border-slate-200 dark:border-white/[0.08] p-3 flex flex-wrap items-center gap-2">
-                {/* Network badge */}
                 <span
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
@@ -267,7 +314,6 @@ export function AppNavbar({ live, onOpenSettings }: AppNavbarProps) {
                   <span className={cn('size-1.5 rounded-full', live ? 'bg-emerald-400' : 'bg-amber-400')} />
                   {live ? 'Preprod' : 'Connecting…'}
                 </span>
-                {/* Theme toggle */}
                 <button
                   type="button"
                   onClick={toggleTheme}
@@ -276,7 +322,6 @@ export function AppNavbar({ live, onOpenSettings }: AppNavbarProps) {
                 >
                   {theme === 'dark' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
                 </button>
-                {/* Connected wallet info */}
                 {connected && (
                   <>
                     <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-300">

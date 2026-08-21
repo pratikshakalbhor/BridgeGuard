@@ -67,9 +67,9 @@ export function WalletConnection() {
 
   if (!state) {
     return loading ? (
-      <EmptyState title="Reading BridgeGuard state…" body="Fetching live bridge state directly from the Midnight contract indexer." />
+      <EmptyState title="Reading ZeroBridge state…" body="Fetching live bridge state directly from the Midnight contract indexer." />
     ) : (
-      <ErrorComponent message={error ?? 'Unable to reach the BridgeGuard backend.'} onRetry={refresh} />
+      <ErrorComponent message={error ?? 'Unable to reach the ZeroBridge backend.'} onRetry={refresh} />
     );
   }
 
@@ -147,9 +147,9 @@ export function WalletConnection() {
                 </div>
                 {wallet.networkId !== BRIDGEGUARD_NETWORK_ID && (
                   <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-xs text-amber-500 dark:text-amber-300">
-                    The wallet is on {wallet.network}, but BridgeGuard AI runs on {networkLabel(BRIDGEGUARD_NETWORK_ID)}.
-                    Switch your Midnight wallet (Lace or 1AM) to the BridgeGuard network so contract
-                    transactions match the deployed BridgeGuard contract.
+                    The wallet is on {wallet.network}, but ZeroBridge runs on {networkLabel(BRIDGEGUARD_NETWORK_ID)}.
+                    Switch your Midnight wallet (Lace or 1AM) to the ZeroBridge network so contract
+                    transactions match the deployed contract.
                   </div>
                 )}
                 <Button variant="outline" className="w-full border-red-400/40 text-red-500 hover:bg-red-400/10 dark:text-red-400" onClick={() => setDisconnectOpen(true)}>
@@ -176,8 +176,8 @@ export function WalletConnection() {
                 </Button>
                 {wallet?.networkId && wallet.networkId !== BRIDGEGUARD_NETWORK_ID && (
                   <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-xs text-amber-500 dark:text-amber-300">
-                    The wallet is on {wallet.network}, but BridgeGuard AI runs on {networkLabel(BRIDGEGUARD_NETWORK_ID)}.
-                    Switch your Midnight wallet (Lace or 1AM) to the BridgeGuard network to send contract
+                    The wallet is on {wallet.network}, but ZeroBridge runs on {networkLabel(BRIDGEGUARD_NETWORK_ID)}.
+                    Switch your Midnight wallet (Lace or 1AM) to the ZeroBridge network to send contract
                     transactions.
                   </div>
                 )}
@@ -206,7 +206,7 @@ export function WalletConnection() {
           <div className="mt-5 space-y-3">
             {backendOffline ? (
               <div className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-500 dark:border-white/[0.07] dark:text-slate-400">
-                No data available — the BridgeGuard backend is offline.
+                No data available — the ZeroBridge backend is offline.
               </div>
             ) : (
               services.map((s, i) => (

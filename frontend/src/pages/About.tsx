@@ -72,7 +72,7 @@ export function About() {
           <div className="pointer-events-none absolute -bottom-24 -left-24 size-72 rounded-full bg-cyan-400/15 blur-3xl" />
           <div className="relative">
             <Badge tone="cyan" className="px-4 py-1.5">
-              <TbShieldLock className="size-3.5" /> About BridgeGuard AI
+              <TbShieldLock className="size-3.5" /> About ZeroBridge
             </Badge>
             <h1 className="mt-5 max-w-2xl text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
               Privacy-preserving bridge security,
@@ -82,7 +82,7 @@ export function About() {
               </span>
             </h1>
             <p className="mt-5 max-w-2xl leading-relaxed text-slate-600 dark:text-slate-300">
-              BridgeGuard AI is a hackathon-built security layer for cross-chain bridges. It
+              ZeroBridge is a privacy-preserving security layer for cross-chain DeFi. It
               evaluates bridge risk — audit status, incidents, liquidity exposure and a
               confidential intelligence feed — inside zero-knowledge circuits, then records
               only a coarse, verifiable verdict on the Midnight ledger. Your numbers stay
@@ -180,8 +180,7 @@ export function About() {
               ))}
             </div>
             <div className="mt-5 rounded-xl border border-violet-400/20 bg-violet-400/5 px-4 py-3 text-xs text-violet-600 dark:text-violet-300">
-              Built for the Midnight SPPU bootcamp — a first-of-its-kind privacy layer for
-              cross-chain bridge intelligence.
+              ZeroBridge — Privacy-preserving security for cross-chain DeFi, powered by zero-knowledge proofs on Midnight.
             </div>
           </div>
         </Reveal>

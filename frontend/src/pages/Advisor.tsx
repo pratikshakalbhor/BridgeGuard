@@ -98,9 +98,9 @@ export function Advisor() {
 
   if (!state) {
     return loading ? (
-      <EmptyState title="Reading BridgeGuard state…" body="Fetching live bridge state directly from the Midnight contract indexer." />
+      <EmptyState title="Reading ZeroBridge state…" body="Fetching live bridge state directly from the Midnight contract indexer." />
     ) : (
-      <ErrorComponent message={dataError ?? 'Unable to reach the BridgeGuard backend.'} onRetry={refresh} />
+      <ErrorComponent message={dataError ?? 'Unable to reach the ZeroBridge backend.'} onRetry={refresh} />
     );
   }
 

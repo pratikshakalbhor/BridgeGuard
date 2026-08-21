@@ -59,7 +59,7 @@ export function Footer() {
 
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-slate-200 dark:border-white/[0.08] pt-6 sm:flex-row">
           <p className="text-xs text-slate-400 dark:text-slate-500">
-            © {new Date().getFullYear()} BridgeGuard AI. Built for the Midnight SPPU bootcamp.
+            © {new Date().getFullYear()} ZeroBridge. Privacy-preserving security for cross-chain DeFi.
           </p>
           <div className="flex items-center gap-4 text-xs text-slate-400 dark:text-slate-500">
             <span>Zero-knowledge verified</span>

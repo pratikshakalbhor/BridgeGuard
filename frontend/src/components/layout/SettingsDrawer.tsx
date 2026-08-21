@@ -226,12 +226,12 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span className="flex items-center gap-1.5 font-medium">
                     <Info className="size-3.5 text-cyan-500" />
-                    BridgeGuard AI v2.0
+                    ZeroBridge v2.0
                   </span>
                   <span>Midnight Network</span>
                 </div>
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed">
-                  Privacy-preserving cross-chain bridge risk evaluation using Compact zero-knowledge circuits.
+                  Privacy-preserving security for cross-chain DeFi using Compact zero-knowledge circuits.
                 </p>
                 <div className="flex items-center gap-4 pt-1 text-xs">
                   <a

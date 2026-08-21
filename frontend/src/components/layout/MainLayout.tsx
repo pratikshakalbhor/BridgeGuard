@@ -35,7 +35,7 @@ export function MainLayout({ title, subtitle, live, children }: MainLayoutProps)
       <footer className="border-t border-slate-200 dark:border-white/[0.08]">
         <div className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6 lg:px-8 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
           <div>
-            BridgeGuard AI · Privacy-preserving cross-chain bridge security on Midnight
+            ZeroBridge · Privacy-preserving security for cross-chain DeFi
           </div>
           <div className="flex items-center gap-4">
             <button
