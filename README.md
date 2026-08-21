@@ -239,6 +239,17 @@ The BridgeGuard v2 contract was earlier deployed on the Midnight Preview Testnet
 npm test
 ```
 
+### Test Evidence
+
+The Level 3 test suite passes all relevant tests:
+
+- BridgeGuard contract tests: 16 passed
+- Age / Eligibility Gate tests: 7 passed
+- Frontend backoff tests: 4 passed
+- **Total: 27 tests passed**
+
+![Level 3 Test Results](docs/screenshots/level3-tests.png)
+
 Expected output:
 
 ```
