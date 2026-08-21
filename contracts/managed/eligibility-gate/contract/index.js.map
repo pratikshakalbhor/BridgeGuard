@@ -1,0 +1,8 @@
+{
+  "version": 3,
+  "file": "index.js",
+  "sourceRoot": "../../../../",
+  "sources": ["contracts/eligibility-gate.compact"],
+  "names": [],
+  "mappings": ";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;EAAA;;;;;;;;;;MAsCA,AAAA,gBAIC;;;;;cAJ+B,OAAc;;;;;;;;;;;;;;;;;;yCAAd,OAAc;;;;;;;;;kDAAd,OAAc;;;OAI7C;;;;;;GAAC;EA1CF;;;;;;;;;;;;;;;;;;;;;;;;;;;IA+BA;;;;;;;;;yEAAkC;IAClC;;;;;;;;;yEAAoC;;;;;;;GAUlC;EAJF,AAAA,mBAIC,4BAJ+B,OAAc;UACtC,UAA+B,GAAX,OAAK;IAC/B;;;;;;;2HAAwB,UAAQ;;yEAApB;UACZ,KAAU;IAAV;;;;;;;;;;6FAAA,KAAU;;;;wEAAA;;GACX;;;;;;;;;;;;;;;;IAXD;qCAAA;;;;;;;;;;;0GAAkC;KAAA;IAClC;qCAAA;;;;;;;;;;;0GAAoC;KAAA;;;;;;;;;;"
+}

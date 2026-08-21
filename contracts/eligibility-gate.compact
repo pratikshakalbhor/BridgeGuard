@@ -1,0 +1,43 @@
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+// ============================================================================
+// Age / Eligibility Gate — prove a threshold without revealing the underlying value.
+// ============================================================================
+//
+// PUBLIC LEDGER STATE (visible to every network observer)
+// ---------------------------------------------------------------------------
+//   checkCount   : Counter    how many eligibility checks have run
+//   lastEligible : Boolean    boolean result of the last check (true = eligible)
+//
+//   -> An on-chain observer can see the count and the coarse boolean result
+//      of each check, but NOT the private value that produced it.
+// ============================================================================
+//
+// PRIVATE (proved in zero knowledge, NEVER written to the ledger)
+// ---------------------------------------------------------------------------
+//   value : the user's actual age/value (circuit parameter + witness)
+//   getValue(): a declared witness supplied by the off-chain DApp.
+//              Its value is used to compute eligibility and is never revealed.
+//
+//   What checkEligibility() discloses is ONLY:
+//       { eligible }
+//   The exact value remains inside the proof.
+//   Private inputs are never logged, stored, or emitted by this contract.
+// ============================================================================
+
+witness getValue(): Uint<8>;
+
+export ledger checkCount: Counter;
+export ledger lastEligible: Boolean;
+
+// --- Confidential eligibility check (THE privacy circuit) --------------------
+// The user's value is a private circuit parameter. The circuit proves, without
+// revealing the value, whether it meets the threshold (18). Only the boolean
+// eligibility result is disclosed on the ledger.
+export circuit checkEligibility(value: Uint<8>): [] {
+  const eligible: Boolean = value >= 18;
+  lastEligible = disclose(eligible);
+  checkCount.increment(1);
+}
