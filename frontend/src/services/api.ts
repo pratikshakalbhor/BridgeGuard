@@ -62,6 +62,10 @@ export interface AppState {
   walletAddress: string;
   balance: WalletMeta;
   ledger: LedgerState;
+  /** True when the backend served cached ledger state because the indexer was temporarily unavailable */
+  stale?: boolean;
+  /** ISO timestamp of the cached snapshot when `stale` is true */
+  cachedAt?: string | null;
 }
 
 export interface TxResult {
@@ -90,7 +94,7 @@ export interface HealthReport {
 }
 
 export const api = {
-  getState: () => request<AppState>('/api/state'),
+  getState: (signal?: AbortSignal) => request<AppState>('/api/state', { signal }),
   getBalance: () => request<WalletMeta>('/api/balance'),
   getHealth: () => request<HealthReport>('/api/health'),
   registerBridge: (payload: {

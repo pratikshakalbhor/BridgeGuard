@@ -22,7 +22,7 @@
     "proof-server:stop": "docker compose down",
     "clean": "rm -rf contracts/managed .midnight-state.json .midnight-wallet-state",
     "test": "npm run test:contract",
-    "test:contract": "vitest run --root . tests/bridgeguard.test.ts"
+    "test:contract": "vitest run --root . tests/"
   },
   "dependencies": {
     "@midnight-ntwrk/compact-runtime": "0.16.0",

@@ -13,7 +13,9 @@ interface AppDataValue {
   hasData: boolean;
   /** Non-null when the latest poll failed. `data` still holds the last good snapshot. */
   error: string | null;
-  /** True when data is available but the last poll failed (stale / reconnecting). */
+  /** True while polls are failing — the UI shows a "reconnecting" state. */
+  retrying: boolean;
+  /** True when the shown snapshot is stale (backend cache served, or last poll failed). */
   stale: boolean;
   refresh: () => Promise<void>;
   /** Alias for data — On-chain snapshot from the deployed Midnight contract. */
@@ -23,7 +25,7 @@ interface AppDataValue {
 const AppDataContext = createContext<AppDataValue | undefined>(undefined);
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
-  const { data, loading, hasData, error, refresh } = useBridgeData(5000);
+  const { data, loading, hasData, error, retrying, stale, refresh } = useBridgeData(5000);
 
   const value: AppDataValue = {
     data,
@@ -31,8 +33,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     loading,
     hasData,
     error,
-    // stale = we have data to show but the latest poll failed
-    stale: hasData && error !== null,
+    retrying,
+    // stale = backend served its cache (stale flag) or the latest poll failed
+    stale,
     refresh,
     state: data,
   };
