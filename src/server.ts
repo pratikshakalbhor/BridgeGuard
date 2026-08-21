@@ -242,7 +242,7 @@ let walletCtx: WalletContext | null = null;
 let providers: Awaited<ReturnType<typeof createProviders>> | null = null;
 let deployed: any = null;
 let deploymentAddress = '';
-let isInitializing = true;
+let isInitializing = false;
 let initError: any = null;
 let lastSyncCheck = 'Not started';
 // Real on-chain transaction ids for the last contract action per bridge, so the
@@ -265,7 +265,7 @@ const standalonePublicDataProvider = indexerPublicDataProvider(networkConfig.ind
 // serves the cache (marked stale) instead of 503, and the server never crashes
 // on indexer unavailability.
 
-const INDEXER_TIMEOUT_MS = 10_000;
+const INDEXER_TIMEOUT_MS = 8_000;
 const INDEXER_MAX_ATTEMPTS = 2;
 const INDEXER_RETRY_DELAYS_MS = [1_000];
 
@@ -350,11 +350,17 @@ function requireWalletRuntime() {
     );
   }
   if (!walletCtx || !providers || !deployed || !deploymentAddress) {
+    if (!isInitializing && !initError) {
+      // Trigger lazy background wallet initialization on demand when required
+      initializeBackground().catch((err) => {
+        console.error('On-demand wallet initialization error:', err);
+      });
+    }
     const detail = initError
       ? `Backend wallet initialization failed: ${initError.message || String(initError)}`
       : isInitializing
-        ? `Backend wallet is still initializing. Status: ${lastSyncCheck}`
-        : 'Backend wallet is not initialized.';
+        ? `Backend wallet is initializing. Status: ${lastSyncCheck}`
+        : 'Backend wallet initialization started on demand.';
     throw new WalletNotReadyError(detail);
   }
   return { walletCtx, providers, deployed };
@@ -972,7 +978,7 @@ async function main() {
         // public contract state from the indexer only. A bounded retry +
         // backoff covers transient indexer failures, and the last successful
         // snapshot is served (marked stale) when the indexer is unavailable.
-        const fresh = await withTimeout(readLedger(), 25_000, null);
+        const fresh = await withTimeout(readLedger(), 18_000, null);
         if (fresh) {
           let serialized: any;
           try {
@@ -1122,10 +1128,11 @@ async function main() {
   console.log(`  Frontend:  http://0.0.0.0:${PORT}/`);
   console.log(`  API:       http://0.0.0.0:${PORT}/api/state`);
 
-  // Start background sync/initialization
-  initializeBackground().catch((err) => {
-    console.error('Fatal initialization error in background task:', err);
-  });
+  // Background wallet initialization is disabled on server startup to keep boot non-blocking.
+  // Wallet initialization runs lazily on demand when transaction endpoints are requested.
+  // initializeBackground().catch((err) => {
+  //   console.error('Fatal initialization error in background task:', err);
+  // });
 
   const shutdown = async () => {
     console.log('\n  Shutting down...');

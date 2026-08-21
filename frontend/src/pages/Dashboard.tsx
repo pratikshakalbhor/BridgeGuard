@@ -133,7 +133,7 @@ export function Dashboard() {
 
   // ── Loading: only before the very first successful fetch ──────────────────
   if (loading) {
-    return <EmptyState title="Connecting to BridgeGuard…" body="Reading bridge state from the Midnight contract. The backend may take up to 60 s to wake up on first visit — please wait." />;
+    return <EmptyState title="Reading BridgeGuard state…" body="Fetching live bridge state directly from the Midnight contract indexer." />;
   }
   // ── No data at all after first fetch attempt ────────────────────────────────
   if (!hasData || !state) {

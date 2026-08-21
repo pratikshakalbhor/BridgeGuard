@@ -25,7 +25,7 @@ interface AppDataValue {
 const AppDataContext = createContext<AppDataValue | undefined>(undefined);
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
-  const { data, loading, hasData, error, retrying, stale, refresh } = useBridgeData(5000);
+  const { data, loading, hasData, error, retrying, stale, refresh } = useBridgeData(15000);
 
   const value: AppDataValue = {
     data,

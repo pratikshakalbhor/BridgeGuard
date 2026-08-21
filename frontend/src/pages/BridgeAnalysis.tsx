@@ -181,7 +181,7 @@ export function BridgeAnalysis() {
 
   if (!state) {
     return loading ? (
-      <EmptyState title="Connecting to BridgeGuard…" body="Reading bridge state from the Midnight contract. The backend may take up to 60 s to wake up on first visit — please wait." />
+      <EmptyState title="Reading BridgeGuard state…" body="Fetching live bridge state directly from the Midnight contract indexer." />
     ) : (
       <ErrorComponent message={dataError ?? 'Unable to reach the BridgeGuard backend.'} onRetry={refresh} />
     );
