@@ -242,9 +242,14 @@ npm test
 Expected output:
 
 ```
-✓ tests/bridgeguard.test.ts (16 tests)
-Test Files  1 passed (1)
-    Tests  16 passed (16)
+ RUN  v4.1.10
+
+ ✓ tests/frontend-backoff.test.ts (4 tests)
+ ✓ tests/eligibility.test.ts (7 tests)
+ ✓ tests/bridgeguard.test.ts (16 tests)
+
+ Test Files  3 passed (3)
+      Tests  27 passed (27)
 ```
 
 Test coverage includes:
@@ -343,6 +348,9 @@ Traditional financial verification systems force the user to reveal transaction 
 
 - **Successful `evaluateBridge()` transaction on 1AM Explorer**
   ![Successful evaluateBridge() transaction on Midnight Preview, verified through the 1AM Explorer.](docs/screenshots/03-evaluateBridge-onchain.png)
+
+- **Level 3 Test Suite Output (27 tests passing)**
+  ![Level 3 Test Results](docs/screenshots/level3-tests.png)
 
 ---
 
@@ -454,6 +462,115 @@ For production/demo hosting under Level 2, the app is deployed in a decoupled ar
 * The Node-based backend/deploy tooling still uses the local proof server for contract deployment and simulator tests; it does not handle end-user evaluations.
 * **AI / risk analysis and ZK proof generation are separate responsibilities.** The AI Transfer Advisor is a transparent rule-based decision-support engine — it does not generate ZK proofs and is not backed by an LLM. The Midnight circuit and proving infrastructure generate the proofs.
 * The confidential intel feed is currently user-provided through the UI; it is not yet connected to an external intelligence provider.
+
+---
+
+## Level 3 — Age / Eligibility Gate
+
+BridgeGuard now includes an **Age / Eligibility Gate** Compact contract that proves a user meets an eligibility threshold without revealing the underlying private value.
+
+### Problem
+
+Users need to prove they meet an eligibility threshold (e.g., age ≥ 18) without revealing the underlying private value (their actual age).
+
+### Solution
+
+BridgeGuard includes an `eligibility-gate.compact` contract with the following design:
+
+- **Circuit**: `checkEligibility(value: Uint<8>)` — takes the user's private value as a circuit parameter
+- **Threshold**: Hardcoded to `18` inside the circuit (not stored in ledger state)
+- **Computation**: `eligible = value >= 18`
+- **Disclosure**: Only the boolean `eligible` result is disclosed via `disclose()`
+- **Ledger state**: `checkCount` (Counter) records number of checks; `lastEligible` (Boolean) stores the latest result
+- The actual private value is **never** written to the public ledger
+
+### Privacy Model
+
+| Category | Fields | Description |
+| --- | --- | --- |
+| **PUBLIC** | `lastEligible` (Boolean) | Boolean result of the latest eligibility check |
+| | `checkCount` (Counter) | Total number of eligibility checks performed |
+| **PRIVATE** | `value` (Uint<8>) | User's actual age/value — never revealed |
+| | `getValue()` (Witness) | Private witness supplying the value from off-chain DApp |
+
+**What an observer CAN learn:**
+- Whether the latest check was eligible (`true`/`false`)
+- How many checks were performed (`checkCount`)
+
+**What an observer CANNOT learn:**
+- The user's actual age/value
+- The exact private input to the circuit
+- The private witness (`getValue()`) value
+
+### Zero-Knowledge Flow
+
+```
+User private value (age)
+         │
+         ▼
+Compact circuit (checkEligibility)
+         │
+         ▼
+ZK proof generated locally in browser via Midnight wallet
+         │
+         ▼
+Only boolean eligibility result disclosed on-chain
+         │
+         ▼
+Public ledger: lastEligible + checkCount
+```
+
+### Testing
+
+Verified test results (all passing):
+
+| Test Suite | Tests | Status |
+| --- | --- | --- |
+| Eligibility tests (`tests/eligibility.test.ts`) | 7 | ✅ Passed |
+| Existing BridgeGuard tests (`tests/bridgeguard.test.ts`) | 16 | ✅ Passed |
+| Frontend backoff tests (`tests/frontend-backoff.test.ts`) | 4 | ✅ Passed |
+| **Total relevant tests** | **27** | **✅ Passed** |
+
+Test coverage includes:
+- Boundary values: 25 (eligible), 16 (ineligible), 18 (eligible boundary), 17 (ineligible boundary)
+- Privacy boundary: private value never appears in public ledger state
+- Identical public state for different private values yielding same eligibility result
+
+### CI/CD
+
+- **GitHub Actions workflow**: `.github/workflows/ci.yml`
+- **Triggers**: Push and pull_request to `main`/`master` branches
+- **Steps**:
+  1. Install dependencies (root + frontend)
+  2. Compile all Compact contracts (`npm run compile` — includes eligibility)
+  3. TypeScript type checks (root + frontend)
+  4. Frontend build
+  5. Test suite (`npm test` — 27 tests passing)
+- **Current status**: Successful passing run on master branch
+
+### Compiled Artifacts
+
+The eligibility contract compiles to:
+
+```
+contracts/managed/eligibility-gate/
+├── compiler/
+│   └── contract-info.json
+├── contract/
+│   └── index.js / index.d.ts / index.js.map
+├── keys/
+│   ├── proving.key
+│   └── verifying.key
+└── zkir/
+    └── eligibility-gate.bzkir
+```
+
+Generated via:
+```bash
+npm run compile:eligibility
+# or
+npm run compile  # compiles all 3 contracts
+```
 
 ---
 
