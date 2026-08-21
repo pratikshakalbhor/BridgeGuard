@@ -258,18 +258,63 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
 
 const standalonePublicDataProvider = indexerPublicDataProvider(networkConfig.indexer, networkConfig.indexerWS);
 
-async function readLedger() {
+// ─── Public ledger state (indexer-only, wallet-independent) ──────────────────
+// /api/state serves public contract state straight from the Midnight indexer.
+// It NEVER depends on the backend wallet, its credentials, or the proof server.
+// The last successful snapshot is cached in memory: a transient indexer failure
+// serves the cache (marked stale) instead of 503, and the server never crashes
+// on indexer unavailability.
+
+const INDEXER_TIMEOUT_MS = 30_000;
+const INDEXER_MAX_ATTEMPTS = 3;
+const INDEXER_RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
+
+let ledgerCache: { ledger: any; fetchedAt: string } | null = null;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Bounded retry with exponential backoff for transient indexer/network failures.
+// Never retries forever and never blocks server startup (all callers are on the
+// request path — the boot sequence never touches the indexer).
+async function queryContractStateWithRetry(address: string) {
+  const dataProvider = providers?.publicDataProvider ?? standalonePublicDataProvider;
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= INDEXER_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const contractState = await withTimeout(
+        dataProvider.queryContractState(address),
+        INDEXER_TIMEOUT_MS,
+        null,
+      );
+      if (contractState) return contractState;
+      lastErr = new Error('indexer returned no contract state for the configured address');
+    } catch (err) {
+      lastErr = err;
+    }
+    if (attempt < INDEXER_MAX_ATTEMPTS) {
+      const delay = INDEXER_RETRY_DELAYS_MS[attempt - 1] ?? 800;
+      console.warn(
+        `  ⚠ [readLedger] indexer attempt ${attempt}/${INDEXER_MAX_ATTEMPTS} failed — retrying in ${delay}ms:`,
+        (lastErr as Error)?.message ?? lastErr,
+      );
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
+}
+
+// Fresh ledger state from the indexer (caching the last successful snapshot),
+// or null when the indexer is temporarily unavailable. Never throws.
+async function readLedger(): Promise<{ ledger: any; fetchedAt: string } | null> {
   try {
-    const dataProvider = providers?.publicDataProvider ?? standalonePublicDataProvider;
-    const contractState = await withTimeout(
-      dataProvider.queryContractState(deploymentAddress),
-      6000,
-      null,
-    );
-    if (!contractState) return null;
-    return BridgeGuardV2.ledger(contractState.data);
+    const contractState = await queryContractStateWithRetry(deploymentAddress);
+    const ledger = BridgeGuardV2.ledger(contractState.data);
+    ledgerCache = { ledger, fetchedAt: new Date().toISOString() };
+    return { ledger, fetchedAt: ledgerCache.fetchedAt };
   } catch (err) {
-    console.warn('  ⚠ [readLedger] Error querying contract state from indexer:', err);
+    console.warn('  ⚠ [readLedger] Error querying contract state from indexer:', (err as Error)?.message ?? err);
     return null;
   }
 }
@@ -424,7 +469,7 @@ async function handlerRegister(body: any) {
   const ledgerState = await readLedger();
   if (ledgerState) {
     let maxId = -1;
-    for (const [, b] of ledgerState.bridges) {
+    for (const [, b] of ledgerState.ledger.bridges) {
       const n = Number(b.id);
       if (n > maxId) maxId = n;
     }
@@ -454,9 +499,9 @@ async function handlerEvaluate(body: any) {
   let within = null;
   if (ledgerState) {
     const id = bridgeId.toString();
-    if (ledgerState.latestVerdicts.member(bridgeId)) {
-      const v = ledgerState.latestVerdicts.lookup(bridgeId);
-      const w = ledgerState.latestWithin.lookup(bridgeId);
+    if (ledgerState.ledger.latestVerdicts.member(bridgeId)) {
+      const v = ledgerState.ledger.latestVerdicts.lookup(bridgeId);
+      const w = ledgerState.ledger.latestWithin.lookup(bridgeId);
       verdict = v.toString();
       within = Boolean(w);
     }
@@ -561,9 +606,9 @@ async function handlerPocFinalize(body: any) {
   let within: boolean | null = null;
   if (data && bridgeId !== null) {
     const ledgerState = await readLedger();
-    if (ledgerState && ledgerState.latestVerdicts.member(bridgeId)) {
-      const v = ledgerState.latestVerdicts.lookup(bridgeId);
-      const w = ledgerState.latestWithin.lookup(bridgeId);
+    if (ledgerState && ledgerState.ledger.latestVerdicts.member(bridgeId)) {
+      const v = ledgerState.ledger.latestVerdicts.lookup(bridgeId);
+      const w = ledgerState.ledger.latestWithin.lookup(bridgeId);
       verdict = v.toString();
       within = w === true || w === 1n;
       console.log(`[POC] 8) disclosed verdict read from ledger: verdict=${verdict} within=${within}`);
@@ -609,9 +654,18 @@ async function handlerHealth() {
   ];
 
   // Contract + indexer share one real query path: reading live ledger state.
+  // This uses the standalone indexer provider (wallet-independent), so the
+  // health rows stay truthful even while the backend wallet is initializing.
   let ledgerOk = false;
+  let ledgerDetail = 'no response';
   try {
-    ledgerOk = providers ? ((await withTimeout(readLedger(), 4000, null)) !== null) : false;
+    const fresh = await withTimeout(readLedger(), 60_000, null);
+    if (fresh) {
+      ledgerOk = true;
+      ledgerDetail = fresh.fetchedAt;
+    } else if (ledgerCache) {
+      ledgerDetail = `indexer down — serving cached state from ${ledgerCache.fetchedAt}`;
+    }
   } catch {
     ledgerOk = false;
   }
@@ -906,58 +960,101 @@ async function main() {
     const pathname = url.pathname;
     try {
       if (req.method === 'GET' && pathname === '/api/health') {
+        // Always 200 (process-up semantics): Render must not restart the
+        // instance just because the indexer is down — availability of the
+        // public state service is carried in the body, not the status code.
         const health = await handlerHealth();
-        const allHealthy = health.services.every((s) => s.healthy);
-        return json(res, allHealthy ? 200 : 503, health);
+        return json(res, 200, health);
       }
 
       if (req.method === 'GET' && pathname === '/api/state') {
-        console.log('[/api/state] handler entered, deploymentAddress:', deploymentAddress || '(empty!)');
-        let ledger: any = null;
-        try {
-          ledger = await withTimeout(readLedger(), 8000, null);
-        } catch (rlErr: any) {
-          console.error('[/api/state] readLedger() threw:', rlErr?.message ?? rlErr);
-          return json(res, 500, { error: 'readLedger failed', detail: String(rlErr?.message ?? rlErr) });
-        }
-        console.log('[/api/state] readLedger returned:', ledger === null ? 'null' : 'object');
-        if (!ledger) {
-          const statusDetail = initError
-            ? `Initialization failed: ${initError.message || String(initError)}`
-            : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
-          return json(res, 503, {
-            error: 'Contract state not available yet',
-            detail: statusDetail,
-            initializing: isInitializing
+        // /api/state is served independently of the backend wallet: it reads
+        // public contract state from the indexer only. A bounded retry +
+        // backoff covers transient indexer failures, and the last successful
+        // snapshot is served (marked stale) when the indexer is unavailable.
+        const fresh = await withTimeout(readLedger(), 90_000, null);
+        if (fresh) {
+          let serialized: any;
+          try {
+            serialized = serializeLedger(fresh.ledger);
+          } catch (slErr: any) {
+            console.error('[/api/state] serializeLedger() threw:', slErr?.message ?? slErr);
+            return json(res, 500, { error: 'serializeLedger failed', detail: String(slErr?.message ?? slErr) });
+          }
+          return json(res, 200, {
+            contractAddress: deploymentAddress,
+            network,
+            walletAddress: walletCtx ? walletCtx.unshieldedKeystore.getBech32Address().toString() : null,
+            balance: walletCtx ? await withTimeout(currentBalance(), 500, { tNight: '0', dust: '0' }) : { tNight: '0', dust: '0' },
+            ledger: serialized,
+            initializing: isInitializing,
+            stale: false,
+            cachedAt: null,
           });
         }
-        let serialized: any;
-        try {
-          serialized = serializeLedger(ledger);
-        } catch (slErr: any) {
-          console.error('[/api/state] serializeLedger() threw:', slErr?.message ?? slErr);
-          return json(res, 500, { error: 'serializeLedger failed', detail: String(slErr?.message ?? slErr) });
+        // Indexer unavailable after bounded retries → serve the cache if we
+        // have one, otherwise a structured 503. Never a 503 because of wallet
+        // state: /api/state is wallet-independent by design.
+        if (ledgerCache) {
+          let serialized: any;
+          try {
+            serialized = serializeLedger(ledgerCache.ledger);
+          } catch (slErr: any) {
+            serialized = null;
+          }
+          if (serialized) {
+            console.warn('[/api/state] Indexer unavailable — serving cached ledger state from', ledgerCache.fetchedAt);
+            return json(res, 200, {
+              contractAddress: deploymentAddress,
+              network,
+              walletAddress: walletCtx ? walletCtx.unshieldedKeystore.getBech32Address().toString() : null,
+              balance: { tNight: '0', dust: '0' },
+              ledger: serialized,
+              initializing: isInitializing,
+              stale: true,
+              cachedAt: ledgerCache.fetchedAt,
+            });
+          }
         }
-        return json(res, 200, {
-          contractAddress: deploymentAddress,
-          network,
-          walletAddress: walletCtx ? walletCtx.unshieldedKeystore.getBech32Address().toString() : null,
-          balance: walletCtx ? await withTimeout(currentBalance(), 500, { tNight: '0', dust: '0' }) : { tNight: '0', dust: '0' },
-          ledger: serialized,
+        return json(res, 503, {
+          error: 'Indexer temporarily unavailable',
+          detail: `The Midnight indexer (${networkConfig.indexer}) did not respond and no cached ledger state is available yet. /api/state is wallet-independent: backend wallet state is not a factor.`,
           initializing: isInitializing,
+          walletDisabled,
+          stale: false,
+          cachedAt: null,
         });
       }
 
       if (isInitializing) {
         if (pathname.startsWith('/api/')) {
-          const statusDetail = walletDisabled
-            ? 'Backend wallet capability is disabled (no MIDNIGHT_WALLET_MNEMONIC / MIDNIGHT_WALLET_SEED configured). /api/state and the frontend remain available; only wallet-dependent endpoints are affected.'
-            : initError
-              ? `Initialization failed: ${initError.message || String(initError)}`
-              : `Service is currently syncing/initializing. Status: ${lastSyncCheck}`;
+          // Wallet-dependent endpoints report the actual wallet status with a
+          // structured "Backend wallet is not ready" 503. /api/state and
+          // /api/health short-circuit above and are never affected.
+          const walletEndpoints = [
+            '/api/balance',
+            '/api/register',
+            '/api/evaluate',
+            '/api/flag',
+            '/api/poc/prepare-evaluate',
+            '/api/poc/finalize',
+          ];
+          if (walletEndpoints.includes(pathname)) {
+            const detail = walletDisabled
+              ? 'Backend wallet capability is disabled (no MIDNIGHT_WALLET_MNEMONIC / MIDNIGHT_WALLET_SEED configured). /api/state and the frontend remain available; only wallet-dependent endpoints are affected.'
+              : initError
+                ? `Backend wallet initialization failed: ${initError.message || String(initError)}`
+                : `Backend wallet is still initializing. Status: ${lastSyncCheck}`;
+            return json(res, 503, {
+              error: 'Backend wallet not ready',
+              detail,
+              initializing: true,
+              walletDisabled,
+            });
+          }
           return json(res, 503, {
             error: 'Service unavailable',
-            detail: statusDetail,
+            detail: `Service is currently syncing/initializing. Status: ${lastSyncCheck}`,
             initializing: true,
             walletDisabled,
           });
