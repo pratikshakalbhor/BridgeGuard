@@ -404,24 +404,146 @@ export function BridgeAnalysis() {
               "Your value stays private. Only the eligibility result is disclosed."
             </p>
 
-            {/* Architecture Flow Diagram */}
-            <div className="mt-4 rounded-xl border border-cyan-500/20 bg-white/40 p-3.5 dark:bg-midnight-950/80">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 mb-2 text-center">
-                Security Evaluation Flow
+            {/* ── Vertical Evaluation Pipeline ── */}
+            <div className="mt-5 rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-white/60 to-slate-50/80 p-5 dark:from-midnight-950/80 dark:to-midnight-900/60">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 mb-4 text-center">
+                Security Evaluation Pipeline
               </div>
-              <div className="flex flex-wrap items-center justify-center gap-2 text-xs font-mono">
-                <div className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-slate-800 dark:border-slate-700 dark:bg-midnight-900 dark:text-slate-200">
-                  Bridge Risk Score
-                </div>
-                <span className="text-cyan-500 font-bold">+</span>
-                <div className="rounded-lg border border-violet-400/40 bg-violet-500/10 px-2.5 py-1 text-violet-600 dark:text-violet-300 font-semibold">
-                  Private Eligibility ({eligibilityStatus === 'verified' ? '✓ Verified' : 'Pending'})
-                </div>
-                <span className="text-cyan-500 font-bold">→</span>
-                <div className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-2.5 py-1 text-cyan-600 dark:text-cyan-300 font-bold">
-                  Security Decision (APPROVE / REVIEW / BLOCK)
-                </div>
-              </div>
+
+              {(() => {
+                const routeChosen = !!selectedBridge;
+                const scanned = routeChosen;
+                const riskScored = !!result;
+                const eligOk = eligibilityStatus === 'verified';
+                const policyDone = riskScored && eligOk;
+                const decisionLabel = result
+                  ? result.verdictLabel === 'LOW'
+                    ? 'APPROVE'
+                    : result.verdictLabel === 'MEDIUM'
+                      ? 'REVIEW'
+                      : 'BLOCK'
+                  : null;
+
+                const steps: { label: string; detail: string; done: boolean; accent: string }[] = [
+                  {
+                    label: 'Transfer Intent',
+                    detail: amount ? `${Number(amount).toLocaleString()} via ${chainName(srcChain)} → ${chainName(dstChain)}` : 'Set amount & route',
+                    done: !!amount && !!srcChain && !!dstChain,
+                    accent: 'text-slate-500',
+                  },
+                  {
+                    label: 'Choose Route & Bridge',
+                    detail: selectedBridge ? `${selectedBridge.name}` : 'Select a bridge on your route',
+                    done: routeChosen,
+                    accent: 'text-cyan-500',
+                  },
+                  {
+                    label: 'BridgeGuard Scans Bridge',
+                    detail: scanned
+                      ? `Registry data: TVL $${fmtCompact(selectedBridge!.tvl)} · ${selectedBridge!.incidents} incidents`
+                      : 'On-chain registry analysis',
+                    done: scanned,
+                    accent: 'text-cyan-500',
+                  },
+                  {
+                    label: 'Risk Score',
+                    detail: riskScored
+                      ? `Score ${result.baseScore}/100 · Verdict: ${result.verdictLabel}`
+                      : 'Zero-knowledge risk evaluation',
+                    done: riskScored,
+                    accent: 'text-amber-500',
+                  },
+                  {
+                    label: 'Private Eligibility Proof',
+                    detail: eligOk
+                      ? 'Eligible: true (ZK verified, value hidden)'
+                      : 'Prove 18+ threshold — value stays private',
+                    done: eligOk,
+                    accent: 'text-violet-500',
+                  },
+                  {
+                    label: 'Security Policy',
+                    detail: policyDone
+                      ? 'Risk + eligibility evaluated'
+                      : 'Combines risk score with eligibility gate',
+                    done: policyDone,
+                    accent: 'text-cyan-500',
+                  },
+                ];
+
+                return (
+                  <div className="relative ml-4">
+                    {/* Vertical connector line */}
+                    <div className="absolute left-[11px] top-3 bottom-3 w-px bg-gradient-to-b from-cyan-400/40 via-violet-400/40 to-emerald-400/40" />
+
+                    {steps.map((step, i) => (
+                      <div key={step.label} className="relative flex items-start gap-3.5 pb-4 last:pb-0">
+                        {/* Step indicator dot */}
+                        <div className={cn(
+                          'relative z-10 mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-full border-2 text-[10px] font-bold transition-all duration-300',
+                          step.done
+                            ? 'border-emerald-400 bg-emerald-400 text-white'
+                            : 'border-slate-300 bg-white text-slate-400 dark:border-slate-600 dark:bg-midnight-900',
+                        )}>
+                          {step.done ? '✓' : i + 1}
+                        </div>
+                        {/* Step content */}
+                        <div className="flex-1 min-w-0">
+                          <div className={cn('text-xs font-semibold', step.done ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400')}>
+                            {step.label}
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            {step.detail}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Final Decision Node */}
+                    <div className="relative flex items-start gap-3.5 pt-1">
+                      <div className={cn(
+                        'relative z-10 mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-full border-2 text-[10px] font-bold',
+                        decisionLabel === 'APPROVE'
+                          ? 'border-emerald-400 bg-emerald-400 text-white'
+                          : decisionLabel === 'REVIEW'
+                            ? 'border-amber-400 bg-amber-400 text-white'
+                            : decisionLabel === 'BLOCK'
+                              ? 'border-red-400 bg-red-400 text-white'
+                              : 'border-slate-300 bg-white text-slate-400 dark:border-slate-600 dark:bg-midnight-900',
+                      )}>
+                        {decisionLabel ? '✓' : '7'}
+                      </div>
+                      <div className="flex-1">
+                        <div className={cn('text-xs font-bold', decisionLabel ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400')}>
+                          Security Decision
+                        </div>
+                        {decisionLabel ? (
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <span className={cn(
+                              'inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-bold',
+                              decisionLabel === 'APPROVE'
+                                ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-600 dark:text-emerald-300'
+                                : decisionLabel === 'REVIEW'
+                                  ? 'border-amber-400/40 bg-amber-400/10 text-amber-600 dark:text-amber-300'
+                                  : 'border-red-400/40 bg-red-400/10 text-red-600 dark:text-red-300',
+                            )}>
+                              {decisionLabel === 'APPROVE' && '✅'} {decisionLabel === 'REVIEW' && '⚠️'} {decisionLabel === 'BLOCK' && '🚫'} {decisionLabel}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="mt-1 flex items-center gap-1.5">
+                            {['APPROVE', 'REVIEW', 'BLOCK'].map((d) => (
+                              <span key={d} className="rounded-md border border-slate-200 bg-slate-100/60 px-2 py-0.5 text-[10px] font-mono font-semibold text-slate-400 dark:border-white/10 dark:bg-midnight-900/60 dark:text-slate-500">
+                                {d}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
