@@ -1,24 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/((?!api/).*)",
-      "destination": "/index.html"
-    }
-  ],
-  "build": {
-    "env": {
-      "VITE_API_BASE": "https://bridgeguard.onrender.com"
-    }
-  },
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "https://bridge-guard-umber.vercel.app" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization, X-Requested-With" },
-        { "key": "Access-Control-Max-Age", "value": "3600" }
-      ]
+      "source": "/api/:path*",
+      "destination": "https://bridgeguard.onrender.com/api/:path*"
     }
   ]
 }
