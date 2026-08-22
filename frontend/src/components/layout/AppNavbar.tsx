@@ -223,6 +223,7 @@ export function AppNavbar({ live }: AppNavbarProps) {
                   <span className="hidden sm:inline">Connect</span>
                 </Button>
               )}
+            </div>
 
             {/* Mobile hamburger */}
             <button

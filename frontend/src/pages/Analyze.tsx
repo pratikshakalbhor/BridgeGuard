@@ -24,7 +24,7 @@ import { TvlSnapshotChart } from '@/components/charts/TvlSnapshotChart';
 import { deriveTvlSnapshot } from '@/utils/deriveData';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 
-export function BridgeAnalysis() {
+export function Analyze() {
   const { state, loading, error: dataError, refresh } = useAppData();
   const { address: walletAddress, status: walletStatus, session: walletSession } = useWallet();
   const bridges = state?.ledger.bridges ?? [];

@@ -12,7 +12,7 @@ interface MetricCardProps {
   loading?: boolean;
 }
 
-const toneStyles: Record<MetricCardProps['tone'], { icon: string; text: string; border: string; bg: string }> = {
+const toneStyles: Record<NonNullable<MetricCardProps['tone']>, { icon: string; text: string; border: string; bg: string }> = {
   cyan: { icon: 'text-cyan-500', text: 'text-cyan-600 dark:text-cyan-400', border: 'border-cyan-400/30', bg: 'bg-cyan-400/10' },
   violet: { icon: 'text-violet-500', text: 'text-violet-600 dark:text-violet-400', border: 'border-violet-400/30', bg: 'bg-violet-400/10' },
   emerald: { icon: 'text-emerald-500', text: 'text-emerald-600 dark:text-emerald-400', border: 'border-emerald-400/30', bg: 'bg-emerald-400/10' },

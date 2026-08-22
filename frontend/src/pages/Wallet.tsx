@@ -17,7 +17,7 @@ import { BRIDGEGUARD_NETWORK_ID, networkLabel } from '@/services/wallet';
 import { shortAddress } from '@/utils/format';
 import { cn } from '@/utils/format';
 
-export function WalletConnection() {
+export function Wallet() {
   const { state, loading, error, refresh } = useAppData();
   const { report: health, refresh: refreshHealth } = useHealth();
   const {
