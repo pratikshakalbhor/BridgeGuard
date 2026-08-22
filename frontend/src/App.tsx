@@ -2,10 +2,9 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { Landing } from '@/pages/Landing';
 import { Dashboard } from '@/pages/Dashboard';
-import { BridgeAnalysis } from '@/pages/BridgeAnalysis';
-import { Advisor } from '@/pages/Advisor';
+import { Analyze } from '@/pages/Analyze';
 import { Security } from '@/pages/Security';
-import { WalletConnection } from '@/pages/WalletConnection';
+import { Wallet } from '@/pages/Wallet';
 import { NotFound } from '@/pages/NotFound';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { PageTransition } from '@/components/motion/PageTransition';
@@ -18,12 +17,8 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
     subtitle: 'Bridge health overview, risk status & zero-knowledge security stats',
   },
   analyze: {
-    title: 'Bridge Analysis',
+    title: 'Analyze',
     subtitle: 'Confidential zero-knowledge risk evaluation & security verdicts',
-  },
-  advisor: {
-    title: 'Transfer Advisor',
-    subtitle: 'Route comparison & privacy-focused bridge recommendations',
   },
   security: {
     title: 'Security',
@@ -76,15 +71,7 @@ function AnimatedRoutes() {
           path="/app/analyze"
           element={
             <AppPage page="analyze">
-              <BridgeAnalysis />
-            </AppPage>
-          }
-        />
-        <Route
-          path="/app/advisor"
-          element={
-            <AppPage page="advisor">
-              <Advisor />
+              <Analyze />
             </AppPage>
           }
         />
@@ -100,17 +87,20 @@ function AnimatedRoutes() {
           path="/app/wallet"
           element={
             <AppPage page="wallet">
-              <WalletConnection />
+              <Wallet />
             </AppPage>
           }
         />
 
-        {/* Redirect merged/legacy routes */}
+        {/* Redirect legacy routes */}
+        <Route path="/app/analyze/*" element={<Navigate to="/app/analyze" replace />} />
+        <Route path="/app/advisor" element={<Navigate to="/app/analyze" replace />} />
         <Route path="/app/alerts" element={<Navigate to="/app/security" replace />} />
         <Route path="/app/whales" element={<Navigate to="/app/security" replace />} />
         <Route path="/app/liquidity" element={<Navigate to="/app/analyze" replace />} />
         <Route path="/app/settings" element={<Navigate to="/app" replace />} />
         <Route path="/app/about" element={<Navigate to="/app" replace />} />
+        <Route path="/app/wallet-connection" element={<Navigate to="/app/wallet" replace />} />
 
         <Route path="/app/*" element={<Navigate to="/app" replace />} />
         <Route path="*" element={<NotFound />} />
