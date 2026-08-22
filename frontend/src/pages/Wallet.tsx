@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { FiCheckCircle, FiLink, FiRefreshCw, FiPower, FiXCircle } from 'react-icons/fi';
+import { Lock } from 'lucide-react';
 import { WalletCard } from '@/components/WalletCard';
 import { WalletSelectModal } from '@/components/WalletSelectModal';
 import { Badge } from '@/components/ui/Badge';
@@ -145,6 +146,16 @@ export function Wallet() {
                     </span>
                   </div>
                 </div>
+                {/* Privacy Indicator */}
+                <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 px-4 py-3">
+                  <div className="flex items-center gap-2 text-xs text-cyan-600 dark:text-cyan-400">
+                    <Lock className="size-3.5 shrink-0" />
+                    <span>Private proving enabled</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Your confidential witness data is processed locally in the browser. Private inputs never leave your device.
+                  </p>
+                </div>
                 {wallet.networkId !== BRIDGEGUARD_NETWORK_ID && (
                   <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-xs text-amber-500 dark:text-amber-300">
                     The wallet is on {wallet.network}, but ZeroBridge runs on {networkLabel(BRIDGEGUARD_NETWORK_ID)}.
@@ -263,6 +274,8 @@ export function Wallet() {
               'Your Midnight wallet signs transactions via the browser extension.',
               'Private state is encrypted with a wallet-scoped password in LevelDB.',
               'Only coarse verdicts ever reach the public ledger.',
+              'ZK proofs are generated locally in your browser — never on a server.',
+              'Private witness values (amount, tolerance, intel) stay in browser memory.',
             ].map((row) => (
               <li key={row} className="flex items-start gap-2.5">
                 <FiCheckCircle className="mt-0.5 size-4 shrink-0 text-emerald-400" />

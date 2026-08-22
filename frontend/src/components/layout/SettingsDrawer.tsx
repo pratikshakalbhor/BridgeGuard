@@ -13,9 +13,10 @@ import {
   Lock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
 import { useAppData } from '@/hooks/useAppData';
 import { shortAddress } from '@/utils/format';
+import { loadPreferences, savePreferences } from '@/utils/preferences';
+import { toast } from 'sonner';
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -24,8 +25,14 @@ interface SettingsDrawerProps {
 
 export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
   const { state, refresh } = useAppData();
-  const [maxRisk, setMaxRisk] = useState<number>(2);
-  const [defaultIntel, setDefaultIntel] = useState<number>(2);
+  
+  // Use a function initializer to pull from local storage once on mount
+  const [prefs, setPrefs] = useState(() => loadPreferences());
+  const [maxRisk, setMaxRisk] = useState<number>(prefs.defaultTolerance);
+  const [defaultIntel, setDefaultIntel] = useState<number>(prefs.defaultIntel);
+  const [securityAlerts, setSecurityAlerts] = useState<boolean>(prefs.notifications.security);
+  const [indexerLag, setIndexerLag] = useState<boolean>(prefs.notifications.liquidity); // Mapping indexer lag to liquidity purely for UI since whaleflow isn't mapped
+  
   const [refreshing, setRefreshing] = useState(false);
   const [tabMemoryCleared, setTabMemoryCleared] = useState(false);
 
@@ -38,6 +45,22 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
   const handleClearMemory = () => {
     setTabMemoryCleared(true);
     setTimeout(() => setTabMemoryCleared(false), 3000);
+  };
+
+  const handleSave = () => {
+    const newPrefs = {
+      defaultTolerance: maxRisk,
+      defaultIntel,
+      notifications: {
+        security: securityAlerts,
+        liquidity: indexerLag,
+        whaleflow: prefs.notifications.whaleflow,
+      },
+    };
+    savePreferences(newPrefs);
+    setPrefs(newPrefs);
+    toast.success('Settings saved', { description: 'Your preferences have been stored locally.' });
+    onClose();
   };
 
   return (
@@ -134,14 +157,20 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
                       <p className="text-xs font-medium text-slate-900 dark:text-white">Security Alerts</p>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400">Alert on bridge flag status changes</p>
                     </div>
-                    <Badge tone="cyan">Active</Badge>
+                    <label className="relative inline-flex cursor-pointer items-center">
+                      <input type="checkbox" className="peer sr-only" checked={securityAlerts} onChange={(e) => setSecurityAlerts(e.target.checked)} />
+                      <div className="peer h-5 w-9 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-cyan-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none dark:bg-slate-700 dark:peer-checked:bg-cyan-500"></div>
+                    </label>
                   </div>
                   <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-white/[0.08]">
                     <div>
                       <p className="text-xs font-medium text-slate-900 dark:text-white">Indexer Lag Warnings</p>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400">Warn when ledger state is stale</p>
                     </div>
-                    <Badge tone="success">Enabled</Badge>
+                    <label className="relative inline-flex cursor-pointer items-center">
+                      <input type="checkbox" className="peer sr-only" checked={indexerLag} onChange={(e) => setIndexerLag(e.target.checked)} />
+                      <div className="peer h-5 w-9 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-cyan-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none dark:bg-slate-700 dark:peer-checked:bg-cyan-500"></div>
+                    </label>
                   </div>
                 </div>
               </section>
@@ -252,6 +281,13 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
                   </a>
                 </div>
               </section>
+            </div>
+
+            {/* Footer with Save */}
+            <div className="p-4 border-t border-slate-200 dark:border-white/[0.08] bg-white dark:bg-midnight-900">
+              <Button onClick={handleSave} className="w-full font-bold">
+                Save Settings
+              </Button>
             </div>
           </motion.aside>
         </>

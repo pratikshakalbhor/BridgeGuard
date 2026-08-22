@@ -7,7 +7,7 @@ import {
   FiRefreshCw,
   FiAlertTriangle,
 } from 'react-icons/fi';
-import { Activity, ShieldAlert } from 'lucide-react';
+import { Activity, ShieldAlert, ShieldCheck, AlertCircle, XCircle } from 'lucide-react';
 import { AlertCard, type AlertItem, type AlertSeverity } from '@/components/AlertCard';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -17,7 +17,7 @@ import { AnimatedCounter } from '@/components/motion/AnimatedCounter';
 import { useAppData } from '@/hooks/useAppData';
 import { deriveAlerts, deriveOnChainActivity } from '@/utils/deriveData';
 import { cn, shortAddress } from '@/utils/format';
-import { flagBridge } from '@/services/midnight';
+import { flagBridge, getSecurityStatus, getLiquidityHealth } from '@/services/midnight';
 
 type Filter = 'all' | AlertSeverity;
 
@@ -68,6 +68,74 @@ export function Security() {
     () => (state?.ledger.bridges ?? []).filter((b) => Number(b.audited) === 0).length,
     [state],
   );
+
+  // Bridge security scores for breakdown section
+  const bridgeSecurityScores = useMemo(() => {
+    if (!state) return [];
+    return state.ledger.bridges.map((b) => {
+      const security = getSecurityStatus(b);
+      const liquidity = getLiquidityHealth(b);
+      const verdictNum = state.ledger.latestVerdicts.find((v) => v.key === b.id)?.value ?? 0;
+      
+      // Calculate score breakdown
+      const auditScore = Number(b.audited) === 1 ? 100 : 60;
+      const incidentScore = Math.max(0, 100 - Number(b.incidents) * 15);
+      const statusScore = Number(b.status) === 0 ? 100 : Number(b.status) === 1 ? 50 : 10;
+      const liquidityScore = liquidity.score;
+      
+      const overallScore = Math.round(
+        (auditScore * 0.3 + incidentScore * 0.3 + statusScore * 0.2 + liquidityScore * 0.2)
+      );
+      
+      return {
+        bridge: b,
+        security,
+        liquidity,
+        verdictNum: Number(verdictNum),
+        overallScore,
+        auditScore,
+        incidentScore,
+        statusScore,
+        liquidityScore,
+        verdictLabel: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'][Number(verdictNum)] ?? '—',
+      };
+    }).sort((a, b) => a.overallScore - b.overallScore); // Worst first
+  }, [state]);
+
+  // Why risky explanations for high/critical bridges
+  const whyRisky = useMemo(() => {
+    if (!state) return [];
+    return state.ledger.bridges
+      .filter((b) => {
+        const verdictNum = state.ledger.latestVerdicts.find((v) => v.key === b.id)?.value ?? 0;
+        return Number(verdictNum) >= 2; // HIGH or CRITICAL
+      })
+      .map((b) => {
+        const verdictNum = state.ledger.latestVerdicts.find((v) => v.key === b.id)?.value ?? 0;
+        const reasons: string[] = [];
+        
+        if (Number(b.status) === 2) reasons.push('Bridge marked COMPROMISED on-chain');
+        else if (Number(b.status) === 1) reasons.push('Bridge flagged for elevated risk');
+        
+        if (Number(b.incidents) >= 5) reasons.push(`${Number(b.incidents)} public incidents recorded`);
+        else if (Number(b.incidents) >= 3) reasons.push(`${Number(b.incidents)} public incidents recorded`);
+        
+        if (Number(b.audited) !== 1) reasons.push('No independent audit on record');
+        
+        const liquidity = getLiquidityHealth(b);
+        if (liquidity.status === 'Thin') reasons.push('Liquidity is thin relative to typical transfer sizes');
+        
+        if (reasons.length === 0) {
+          reasons.push('Risk score elevated due to combined factors');
+        }
+        
+        return {
+          bridge: b,
+          verdictLabel: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'][Number(verdictNum)] ?? '—',
+          reasons,
+        };
+      });
+  }, [state]);
 
   const acknowledgeAll = () => {
     setAlerts((prev) => prev.map((a) => ({ ...a, status: 'acknowledged' as const })));
@@ -256,6 +324,125 @@ export function Security() {
           </Button>
         </div>
       </section>
+
+      {/* Bridge Security Score Breakdown */}
+      {bridgeSecurityScores.length > 0 && (
+        <section className="card p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-white/[0.08]">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="size-4 text-cyan-400" />
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-900 dark:text-white">
+                Bridge Security Score
+              </h2>
+            </div>
+            <Badge tone="cyan">from registry data</Badge>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Composite score derived from on-chain registry: contract risk, incident history, liquidity, registry status, and audit status.
+            Lower score = higher risk. Scores show when data is available; "Data unavailable" when insufficient on-chain data.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500 dark:border-white/[0.08] dark:text-slate-400">
+                  <th className="px-4 py-3 font-medium">Bridge</th>
+                  <th className="px-4 py-3 font-medium text-center">Overall</th>
+                  <th className="px-4 py-3 font-medium text-center">Contract Risk</th>
+                  <th className="px-4 py-3 font-medium text-center">Incident History</th>
+                  <th className="px-4 py-3 font-medium text-center">Liquidity</th>
+                  <th className="px-4 py-3 font-medium text-center">Registry Status</th>
+                  <th className="px-4 py-3 font-medium text-center">Audit Status</th>
+                  <th className="px-4 py-3 font-medium text-center">Verdict</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-white/[0.06]">
+                {bridgeSecurityScores.map((item) => (
+                  <tr key={item.bridge.id} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
+                    <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{item.bridge.name}</td>
+                    <td className="px-4 py-3 text-center font-mono font-bold">
+                      {item.overallScore}/100
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Badge tone={item.auditScore >= 80 ? 'success' : item.auditScore >= 50 ? 'warning' : 'critical'}>
+                        {item.auditScore}/100
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Badge tone={item.incidentScore >= 80 ? 'success' : item.incidentScore >= 50 ? 'warning' : 'critical'}>
+                        {item.incidentScore}/100
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Badge tone={item.liquidityScore >= 60 ? 'success' : item.liquidityScore >= 35 ? 'warning' : 'critical'}>
+                        {item.liquidityScore}/100
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Badge tone={item.statusScore >= 80 ? 'success' : item.statusScore >= 50 ? 'warning' : 'critical'}>
+                        {item.statusScore}/100
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Badge tone={Number(item.bridge.audited) === 1 ? 'success' : 'warning'}>
+                        {Number(item.bridge.audited) === 1 ? 'Audited' : 'Unaudited'}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Badge tone={item.verdictNum === 0 ? 'success' : item.verdictNum === 1 ? 'warning' : item.verdictNum === 2 ? 'danger' : 'critical'}>
+                        {item.verdictLabel}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* Why This Is Risky - for HIGH/CRITICAL verdicts */}
+      {whyRisky.length > 0 && (
+        <section className="card p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-3 dark:border-white/[0.08]">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="size-4 text-rose-500" />
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-900 dark:text-white">
+                Why This Is Risky
+              </h2>
+            </div>
+            <Badge tone="critical">HIGH/CRITICAL verdicts only</Badge>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Human-readable explanations for every bridge with a HIGH or CRITICAL verdict. The system does not guarantee safety — these are risk indicators derived from on-chain data.
+          </p>
+          <div className="space-y-3">
+            {whyRisky.map((item, i) => (
+              <motion.div
+                key={item.bridge.id}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 + i * 0.05 }}
+                className="rounded-xl border border-rose-400/30 bg-rose-400/5 p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-slate-900 dark:text-white">{item.bridge.name}</p>
+                  <Badge tone={item.verdictLabel === 'HIGH' ? 'danger' : 'critical'}>
+                    {item.verdictLabel}
+                  </Badge>
+                </div>
+                <ul className="mt-3 space-y-1.5">
+                  {item.reasons.map((reason, ri) => (
+                    <li key={ri} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+                      <XCircle className="size-4 shrink-0 text-rose-500 mt-0.5" />
+                      {reason}
+                    </li>
+                  ))}
+                </ul>
+              </motion.div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* On-Chain Activity & Transfer Security Table */}
       <section className="space-y-3">

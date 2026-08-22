@@ -19,6 +19,7 @@ import { useWallet } from '@/hooks/useWallet';
 import { Button } from '@/components/ui/Button';
 import { Logo } from '@/components/Logo';
 import { WalletSelectModal } from '@/components/WalletSelectModal';
+import { SettingsDrawer } from '@/components/layout/SettingsDrawer';
 import { cn, shortAddress } from '@/utils/format';
 
 interface NavRouteItem {
@@ -47,6 +48,7 @@ export function AppNavbar({ live }: AppNavbarProps) {
   const [selectOpen, setSelectOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const connecting = status === 'connecting' || status === 'checking';
   const connected = session?.connected === true && !!session.address;
@@ -142,6 +144,16 @@ export function AppNavbar({ live }: AppNavbarProps) {
               className="hidden sm:grid size-9 place-items-center rounded-lg border border-slate-200 text-slate-600 dark:border-white/10 dark:text-slate-300 transition-colors hover:border-cyan-400/50 hover:text-cyan-500"
             >
               {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </button>
+
+            {/* Settings */}
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Settings"
+              className="hidden sm:grid size-9 place-items-center rounded-lg border border-slate-200 text-slate-600 dark:border-white/10 dark:text-slate-300 transition-colors hover:border-cyan-400/50 hover:text-cyan-500"
+            >
+              <FiSettings className="size-4" />
             </button>
 
             {/* Wallet state / User menu */}
@@ -343,6 +355,7 @@ export function AppNavbar({ live }: AppNavbarProps) {
       </AnimatePresence>
 
       <WalletSelectModal open={selectOpen} wallets={wallets} onClose={() => setSelectOpen(false)} onSelect={handleSelectWallet} />
+      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   );
 }

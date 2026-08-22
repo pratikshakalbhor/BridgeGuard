@@ -1,14 +1,13 @@
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
-  Bell,
-  Cpu,
   EyeOff,
-  FileCheck2,
-  Gauge,
   Lock,
   ShieldCheck,
   Sparkles,
+  Search,
+  ShieldAlert,
+  Wallet,
   Waves,
   Zap,
 } from 'lucide-react';
@@ -27,34 +26,24 @@ interface Feature {
 
 const FEATURES: Feature[] = [
   {
-    icon: EyeOff,
-    title: 'Zero-knowledge evaluations',
-    body: 'Transfer amounts and your personal risk tolerance are proved in zero knowledge on Midnight — never revealed to the ledger or any observer.',
-  },
-  {
-    icon: Gauge,
-    title: 'On-chain risk scores',
-    body: 'Every bridge carries a transparent, auditable risk score derived from audit status, public incidents, and liquidity exposure.',
-  },
-  {
-    icon: Waves,
-    title: 'Liquidity health signals',
-    body: 'Track total value locked and exposure thresholds so you can spot thin-liquidity bridges before you move assets across them.',
-  },
-  {
-    icon: Bell,
-    title: 'Real-time bridge alerts',
-    body: 'Flag compromised or degraded bridges the moment status changes on-chain, with coarse verdict history stored publicly.',
+    icon: Search,
+    title: 'Private Risk Analysis',
+    body: 'Evaluate cross-chain transfer risk with your exact amount and personal tolerance — both stay private in zero-knowledge proofs.',
   },
   {
     icon: Lock,
-    title: 'Private intel feed',
-    body: 'A confidential incident-intelligence witness sharpens verdicts without leaking the underlying data to anyone.',
+    title: 'Local Zero-Knowledge Proofs',
+    body: 'Proofs are generated in your browser via 1AM or Lace wallet. Private inputs never leave your device or touch any server.',
   },
   {
-    icon: Cpu,
-    title: 'Built on Midnight',
-    body: 'Leverages Midnight’s privacy-preserving smart contracts and zero-knowledge proofs for a first-of-its-kind security layer.',
+    icon: EyeOff,
+    title: 'Private Eligibility Verification',
+    body: 'Prove you meet threshold requirements (e.g., age 18+) without revealing the underlying value — only the boolean result is disclosed.',
+  },
+  {
+    icon: ShieldAlert,
+    title: 'Cross-Chain Security Monitoring',
+    body: 'Real-time bridge registry status, incident flags, and liquidity health from the Midnight contract ledger.',
   },
 ];
 
@@ -68,27 +57,27 @@ interface Step {
 const STEPS: Step[] = [
   {
     number: '01',
-    title: 'Register a bridge',
-    body: 'Add bridge metadata — source/destination chains, TVL, audit status and public incident count — as a transparent on-chain record.',
-    icon: FileCheck2,
+    title: 'Select your route',
+    body: 'Choose source chain, destination chain, and a registered bridge. View public TVL, audit status, and incident history.',
+    icon: Search,
   },
   {
     number: '02',
-    title: 'Run a private evaluation',
-    body: 'Enter your transfer amount and personal risk tolerance. A zero-knowledge circuit combines them with the bridge score and the confidential intel feed.',
-    icon: ShieldCheck,
+    title: 'Enter private parameters',
+    body: 'Set your transfer amount, risk tolerance, and confidential intel. These values are used locally for ZK proving only.',
+    icon: Lock,
   },
   {
     number: '03',
-    title: 'Verify the verdict',
-    body: 'The ledger records only a coarse verdict — LOW, MEDIUM, HIGH or CRITICAL — and whether it fit your tolerance. The inputs stay hidden.',
-    icon: Zap,
+    title: 'Generate proof in wallet',
+    body: 'Your Midnight wallet (1AM/Lace) generates the zero-knowledge proof locally. You approve the transaction and pay the DUST fee.',
+    icon: Wallet,
   },
   {
     number: '04',
-    title: 'Move with confidence',
-    body: 'Decide with a clear, proof-backed recommendation instead of guessing about bridge security and liquidity health.',
-    icon: Sparkles,
+    title: 'Get coarse verdict',
+    body: 'The ledger discloses only: LOW/MEDIUM/HIGH/CRITICAL verdict and whether it fits your tolerance. Exact inputs remain hidden.',
+    icon: Zap,
   },
 ];
 
@@ -104,32 +93,27 @@ export function Landing() {
           <div className="animate-fade-up">
             <Badge tone="cyan" className="px-4 py-1.5">
               <Sparkles className="size-3.5" />
-              Privacy-preserving bridge intelligence
+              Privacy-preserving security for cross-chain DeFi
             </Badge>
           </div>
           <h1
             className="mt-6 animate-fade-up text-4xl font-extrabold leading-[1.1] tracking-tight text-slate-900 dark:text-white sm:text-6xl"
             style={{ animationDelay: '80ms' }}
           >
-            Know your bridge.
-            <br />
-            Before you{' '}
-            <span className="bg-gradient-to-r from-cyan-400 via-cyan-300 to-violet-400 bg-clip-text text-transparent">
-              move your assets.
-            </span>
+            ZeroBridge
           </h1>
           <p
-            className="mx-auto mt-6 max-w-2xl animate-fade-up text-base leading-relaxed text-slate-600 dark:text-slate-300 sm:text-lg"
+            className="mt-4 animate-fade-up text-lg leading-relaxed text-slate-600 dark:text-slate-300 sm:text-xl"
             style={{ animationDelay: '160ms' }}
           >
-            ZeroBridge provides privacy-preserving security for cross-chain DeFi. Evaluate bridge risk, verify liquidity health, and generate zero-knowledge verdicts on Midnight without exposing sensitive amounts or personal risk parameters.
+            Analyze cross-chain transfer risk while keeping sensitive financial information private.
           </p>
           <div
             className="mt-10 flex animate-fade-up flex-col items-center justify-center gap-3 sm:flex-row"
             style={{ animationDelay: '240ms' }}
           >
             <Link to="/app" className="btn-primary w-full px-8 py-3.5 text-base sm:w-auto">
-              Launch dashboard
+              Launch App
               <ArrowRight className="size-4.5" />
             </Link>
             <a href="#how-it-works" className="btn-outline w-full px-8 py-3.5 text-base sm:w-auto">
@@ -140,19 +124,20 @@ export function Landing() {
             className="mt-6 animate-fade-up text-xs text-slate-400 dark:text-slate-500"
             style={{ animationDelay: '320ms' }}
           >
-            Zero-knowledge proofs · Midnight Preview · Sensitive inputs stay off-chain.
+            Zero-knowledge proofs · Midnight Preprod · Private inputs processed locally in your browser
           </p>
         </div>
 
         {/* hero metrics */}
         <div
-          className="mx-auto mt-16 grid max-w-4xl animate-fade-up grid-cols-1 gap-4 sm:grid-cols-3"
+          className="mx-auto mt-16 grid max-w-4xl animate-fade-up grid-cols-1 gap-4 sm:grid-cols-4"
           style={{ animationDelay: '400ms' }}
         >
           {[
-            { value: '100%', label: 'Private inputs, always' },
-            { value: '4', label: 'Coarse verdict tiers' },
-            { value: '0', label: 'Amounts on the ledger' },
+            { value: '100%', label: 'Private inputs stay local' },
+            { value: '4', label: 'Verdict tiers' },
+            { value: '0', label: 'Amounts on ledger' },
+            { value: '2', label: 'Supported wallets' },
           ].map((m) => (
             <div
               key={m.label}
@@ -168,17 +153,16 @@ export function Landing() {
       {/* ── Features ─────────────────────────────────────────────────────── */}
       <section id="features" className="relative mx-auto max-w-7xl px-5 py-24 sm:px-8">
         <div className="mx-auto max-w-2xl text-center">
-          <span className="section-eyebrow">Features</span>
+          <span className="section-eyebrow">Core Features</span>
           <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-            Security intelligence you can verify, not just trust
+            Privacy-preserving security you can verify
           </h2>
           <p className="mt-4 text-slate-600 dark:text-slate-300">
-            Every claim ZeroBridge makes is grounded in on-chain facts and zero-knowledge
-            proofs — nothing to take on faith.
+            Every ZeroBridge feature is grounded in on-chain facts and zero-knowledge proofs — nothing to take on faith.
           </p>
         </div>
 
-        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {FEATURES.map((f, i) => (
             <Reveal key={f.title} delay={i * 0.07}>
               <div className="glass group rounded-2xl p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-card">
@@ -203,7 +187,7 @@ export function Landing() {
           <div className="mx-auto max-w-2xl text-center">
             <span className="section-eyebrow">How it works</span>
             <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-              From metadata to a proof-backed verdict
+              From route selection to a proof-backed verdict
             </h2>
           </div>
 
@@ -235,30 +219,28 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ── Privacy ──────────────────────────────────────────────────────── */}
+      {/* ── Privacy Model ────────────────────────────────────────────────── */}
       <section id="privacy" className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-2">
           <div>
             <span className="section-eyebrow">
-              <EyeOff className="size-3.5" /> Privacy model
+              <EyeOff className="size-3.5" /> Privacy Model
             </span>
             <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-              Your numbers stay private.
+              Your sensitive data stays private.
               <br />
-              The proof is public.
+              Only the coarse verdict becomes public.
             </h2>
             <p className="mt-4 leading-relaxed text-slate-600 dark:text-slate-300">
-              Midnight separates what is public from what is private better than any
-              bridge explorer today. The registry — bridge metadata, risk scores, status
-              and coarse verdict history — is transparent to everyone. The inputs that
-              matter to you — transfer amount, risk tolerance, and the confidential intel
-              feed — are consumed inside the proof and never leave it.
+              Midnight separates what is public from what is private. The registry — bridge metadata, risk scores, status
+              flags, and coarse verdict history — is transparent to everyone. The inputs that matter to you — transfer amount,
+              risk tolerance, and the confidential intel feed — are consumed inside the proof and never leave your browser.
             </p>
             <ul className="mt-6 space-y-3">
               {[
-                'Public: bridge registry, risk scores, status flags',
-                'Private: amounts, tolerances, and the intel witness',
-                'Revealed: only a coarse verdict and tolerance fit',
+                'Public: bridge registry, risk scores, status flags, coarse verdicts',
+                'Private: transfer amounts, risk tolerances, intel feed witness',
+                'Revealed: only a coarse verdict (LOW/MEDIUM/HIGH/CRITICAL) and tolerance fit',
               ].map((row) => (
                 <li key={row} className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-200">
                   <ShieldCheck className="mt-0.5 size-4 shrink-0 text-cyan-400" />
@@ -311,7 +293,7 @@ export function Landing() {
               Run your first confidential bridge evaluation today
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-slate-600 dark:text-slate-300">
-              Connect to the Midnight Preview dashboard, register or select a bridge, and get a
+              Connect to the Midnight Preprod dashboard, register or select a bridge, and get a
               proof-backed risk verdict in under a minute.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">

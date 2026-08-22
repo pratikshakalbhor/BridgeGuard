@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { FiAlertTriangle, FiBox, FiCheckCircle, FiSearch } from 'react-icons/fi';
-import { CheckCircle2, Lock, Shield } from 'lucide-react';
+import { FiAlertTriangle, FiBox, FiCheckCircle, FiSearch, FiGitBranch } from 'react-icons/fi';
+import { CheckCircle2, Lock, Shield, AlertCircle, XCircle, CheckCircle } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -16,7 +16,7 @@ import { useWallet } from '@/hooks/useWallet';
 import { assessBridge, publicRecommendationFor, type Assessment } from '@/utils/riskEngine';
 import { CHAIN_IDS, chainName } from '@/utils/constants';
 import { cn, fmtCompact, shortAddress } from '@/utils/format';
-import { getSecurityStatus, evaluateBridgeWithWallet } from '@/services/midnight';
+import { getSecurityStatus, getLiquidityHealth, evaluateBridgeWithWallet } from '@/services/midnight';
 import { BRIDGEGUARD_NETWORK_ID, networkLabel } from '@/services/wallet';
 import type { WalletSignStep } from '@/services/midnight';
 import { loadPreferences } from '@/utils/preferences';
@@ -76,6 +76,48 @@ export function Analyze() {
     const ids = new Set(candidates.map((b) => b.id));
     return tvlSnapshot.filter((d) => ids.has(d.bridgeId));
   }, [candidates, tvlSnapshot]);
+
+  // Route comparison: all available routes from registry
+  const allRoutes = useMemo(() => {
+    if (!state) return [];
+    const bridges = state.ledger.bridges;
+    const routeMap = new Map<string, typeof bridges[0][]>();
+    
+    for (const bridge of bridges) {
+      const key = `${bridge.srcChain}→${bridge.dstChain}`;
+      if (!routeMap.has(key)) routeMap.set(key, []);
+      routeMap.get(key)!.push(bridge);
+    }
+    
+    return Array.from(routeMap.entries()).map(([routeKey, routeBridges]) => {
+      const bestBridge = routeBridges.reduce((best, b) => 
+        Number(b.riskScore) < Number(best.riskScore) ? b : best
+      );
+      const security = getSecurityStatus(bestBridge);
+      const liquidity = getLiquidityHealth(bestBridge);
+      
+      // Calculate risk based on bridge's risk score
+      let risk: 'Low' | 'Medium' | 'High' | 'Critical' = 'Low';
+      let verdict: 'Recommended' | 'Review' | 'Avoid' = 'Recommended';
+      if (Number(bestBridge.riskScore) >= 55) { risk = 'Critical'; verdict = 'Avoid'; }
+      else if (Number(bestBridge.riskScore) >= 30) { risk = 'High'; verdict = 'Avoid'; }
+      else if (Number(bestBridge.riskScore) >= 10) { risk = 'Medium'; verdict = 'Review'; }
+      
+      return {
+        route: routeKey.replace('→', ' → '),
+        srcChain: bestBridge.srcChain,
+        dstChain: bestBridge.dstChain,
+        bridgeName: bestBridge.name,
+        risk,
+        verdict,
+        liquidity: liquidity.status,
+        liquidityScore: liquidity.score,
+        riskScore: Number(bestBridge.riskScore),
+        securityTone: security.tone,
+        securityLabel: security.label,
+      };
+    });
+  }, [state]);
 
   useEffect(() => {
     setResult(null);
@@ -320,11 +362,11 @@ export function Analyze() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    Private Eligibility Gate
+                    Private Eligibility
                     <Badge tone="violet">eligibility-gate.compact</Badge>
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Prove threshold requirements without revealing your underlying private value
+                    Prove eligibility without revealing your actual value.
                   </p>
                 </div>
               </div>
@@ -333,7 +375,7 @@ export function Analyze() {
                 {eligibilityStatus === 'verified' ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-300">
                     <CheckCircle2 className="size-4 text-emerald-500" />
-                    ✓ Eligibility Verified
+                    ✓ Eligible — value remains private
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-600 dark:text-amber-300">
@@ -384,7 +426,7 @@ export function Analyze() {
                   Disclosed Result
                 </div>
                 <div className="mt-0.5 font-mono text-xs font-bold text-emerald-500">
-                  {eligibilityStatus === 'verified' ? 'Eligible: true' : 'Not proven yet'}
+                  {eligibilityStatus === 'verified' ? '✓ Eligible' : 'Not proven yet'}
                 </div>
                 <Button
                   size="sm"
@@ -615,6 +657,62 @@ export function Analyze() {
 
       {result && selectedBridge ? (
         <>
+          {/* ── BRIDGE RISK RESULT CARD ── */}
+          <motion.section
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={cn(
+              'rounded-2xl border p-6',
+              result.tone === 'success' && 'border-emerald-400/30 bg-emerald-400/10',
+              result.tone === 'warning' && 'border-amber-400/30 bg-amber-400/10',
+              result.tone === 'danger' && 'border-red-400/30 bg-red-400/10',
+              result.tone === 'critical' && 'border-red-400/30 bg-red-400/10',
+            )}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  BRIDGE RISK RESULT
+                  <Badge tone={result.tone} className="ml-2">{result.verdictLabel}</Badge>
+                </h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                  {selectedBridge.name} · {chainName(srcChain)} → {chainName(dstChain)} · ${Number(amount).toLocaleString()}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className={cn('text-2xl font-bold', result.tone === 'success' && 'text-emerald-600 dark:text-emerald-400', result.tone === 'warning' && 'text-amber-600 dark:text-amber-400', result.tone === 'danger' && 'text-red-600 dark:text-red-400', result.tone === 'critical' && 'text-red-600 dark:text-red-400')}>
+                  {result.verdictLabel === 'LOW' ? 'RECOMMENDED' : result.verdictLabel === 'MEDIUM' ? 'REVIEW' : 'AVOID'}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">On-chain verdict</p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-4">
+              <div className="rounded-xl border border-slate-200/50 p-4 dark:border-white/10">
+                <p className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Security Risk</p>
+                <p className={cn('mt-1 font-bold', security?.tone === 'success' && 'text-emerald-600 dark:text-emerald-400', security?.tone === 'warning' && 'text-amber-600 dark:text-amber-400', security?.tone === 'critical' && 'text-red-600 dark:text-red-400')}>
+                  {security?.label ?? '—'}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200/50 p-4 dark:border-white/10">
+                <p className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Liquidity Risk</p>
+                <p className={cn('mt-1 font-bold', getLiquidityHealth(selectedBridge).status === 'Healthy' && 'text-emerald-600 dark:text-emerald-400', getLiquidityHealth(selectedBridge).status === 'Stretched' && 'text-amber-600 dark:text-amber-400', getLiquidityHealth(selectedBridge).status === 'Thin' && 'text-red-600 dark:text-red-400')}>
+                  {getLiquidityHealth(selectedBridge).status}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200/50 p-4 dark:border-white/10">
+                <p className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">Eligibility</p>
+                <p className={cn('mt-1 font-bold', eligibilityStatus === 'verified' && 'text-emerald-600 dark:text-emerald-400', eligibilityStatus !== 'verified' && 'text-amber-600 dark:text-amber-400')}>
+                  {eligibilityStatus === 'verified' ? 'Verified' : 'Unverified'}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200/50 p-4 dark:border-white/10">
+                <p className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">ZK Proof</p>
+                <p className="mt-1 font-bold text-cyan-600 dark:text-cyan-400">Generated locally</p>
+              </div>
+            </div>
+          </motion.section>
+
           {/* Security status + warning */}
           <motion.section
             initial={{ opacity: 0, y: 16 }}
@@ -719,6 +817,67 @@ export function Analyze() {
             </motion.div>
           </section>
 
+          {/* ── COMPARE ROUTES ── */}
+          {allRoutes.length > 1 && (
+            <motion.section
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="card p-6"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                  <FiGitBranch className="size-4 text-cyan-400" />
+                  Compare Routes
+                </h2>
+                <Badge tone="cyan">from registry</Badge>
+              </div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500 dark:border-white/[0.08] dark:text-slate-400">
+                      <th className="px-4 py-3 font-medium">Route</th>
+                      <th className="px-4 py-3 font-medium text-center">Risk</th>
+                      <th className="px-4 py-3 font-medium text-center">Liquidity</th>
+                      <th className="px-4 py-3 font-medium text-center">Recommendation</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-white/[0.06]">
+                    {allRoutes.map((route, i) => (
+                      <tr key={i} className={cn('hover:bg-slate-50/50 dark:hover:bg-white/[0.02]', route.route === `${chainName(srcChain)} → ${chainName(dstChain)}` && 'bg-cyan-400/5')}>
+                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
+                          {route.route}
+                          {route.route === `${chainName(srcChain)} → ${chainName(dstChain)}` && (
+                            <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-cyan-400/20 text-cyan-600 dark:text-cyan-400">Selected</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <Badge tone={route.risk === 'Low' ? 'success' : route.risk === 'Medium' ? 'warning' : 'danger'}>
+                            {route.risk}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <Badge tone={route.liquidity === 'Healthy' ? 'success' : route.liquidity === 'Stretched' ? 'warning' : 'danger'}>
+                            {route.liquidity}
+                            {route.liquidityScore < 35 && <span className="ml-1 text-[10px]">(Thin)</span>}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <Badge tone={route.verdict === 'Recommended' ? 'success' : route.verdict === 'Review' ? 'warning' : 'danger'}>
+                            {route.verdict}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="mt-3 text-xs text-slate-500 dark:text-slate-400 italic">
+                  Data sourced from on-chain bridge registry. Liquidity status derived from TVL, audit status, incidents, and security flags.
+                  {allRoutes.some(r => r.liquidityScore < 35) && ' Some routes show thin liquidity — not available in real-time.'}
+                </p>
+              </div>
+            </motion.section>
+          )}
+
           {/* Score breakdown */}
           <section className="card p-6">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -752,6 +911,70 @@ export function Analyze() {
               ))}
             </div>
           </section>
+
+          {/* ── FINAL DECISION CARD ── */}
+          <motion.section
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={cn(
+              'rounded-2xl border p-6',
+              result.verdict === 0 && 'border-emerald-400/30 bg-emerald-400/10',
+              result.verdict === 1 && 'border-amber-400/30 bg-amber-400/10',
+              result.verdict >= 2 && 'border-red-400/30 bg-red-400/10',
+            )}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  'grid size-12 place-items-center rounded-xl',
+                  result.verdict === 0 && 'bg-emerald-400/20 text-emerald-500',
+                  result.verdict === 1 && 'bg-amber-400/20 text-amber-500',
+                  result.verdict >= 2 && 'bg-red-400/20 text-red-500',
+                )}>
+                  {result.verdict === 0 ? <CheckCircle className="size-6" /> : result.verdict === 1 ? <AlertCircle className="size-6" /> : <XCircle className="size-6" />}
+                </div>
+                <div>
+                  <p className={cn('text-xl font-bold', result.verdict === 0 && 'text-emerald-600 dark:text-emerald-400', result.verdict === 1 && 'text-amber-600 dark:text-amber-400', result.verdict >= 2 && 'text-red-600 dark:text-red-400')}>
+                    {result.verdict === 0 ? '✓ RECOMMENDED' : result.verdict === 1 ? '⚠ REVIEW REQUIRED' : '✕ NOT RECOMMENDED'}
+                  </p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">Should I proceed?</p>
+                </div>
+              </div>
+              <Badge tone={result.verdict === 0 ? 'success' : result.verdict === 1 ? 'warning' : 'critical'} className="text-sm">
+                {result.verdictLabel} Risk
+              </Badge>
+            </div>
+            <div className="mt-5">
+              <p className="text-sm font-medium text-slate-900 dark:text-white">Why:</p>
+              <ul className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="size-4 shrink-0 text-emerald-500 mt-0.5" />
+                  Bridge risk is {result.verdict === 0 ? 'within your selected tolerance' : result.verdict === 1 ? 'elevated but within tolerance' : 'above your tolerance'}
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="size-4 shrink-0 text-emerald-500 mt-0.5" />
+                  Route has {security?.tone === 'success' ? 'acceptable' : security?.tone === 'warning' ? 'elevated' : 'compromised'} security status
+                </li>
+                <li className="flex items-start gap-2">
+                  {eligibilityStatus === 'verified' ? (
+                    <>
+                      <CheckCircle2 className="size-4 shrink-0 text-emerald-500 mt-0.5" />
+                      Eligibility verified privately
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="size-4 shrink-0 text-amber-500 mt-0.5" />
+                      Eligibility not verified
+                    </>
+                  )}
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="size-4 shrink-0 text-emerald-500 mt-0.5" />
+                  ZK proof generated locally in browser
+                </li>
+              </ul>
+            </div>
+          </motion.section>
         </>
       ) : (
         !error && (

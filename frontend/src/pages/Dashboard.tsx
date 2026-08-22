@@ -10,6 +10,9 @@ import {
   Wallet,
   Waves,
   BrainCircuit,
+  Lock,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { AnimatedCounter } from '@/components/motion/AnimatedCounter';
 import { MotionCard } from '@/components/motion/MotionCard';
@@ -61,6 +64,13 @@ const EVENT_META: Record<string, { tone: 'cyan' | 'violet' | 'warning' | 'danger
   flag: { tone: 'danger', icon: Flag },
   liquidity: { tone: 'warning', icon: Waves },
 };
+
+interface RecentAnalysis {
+  route: string;
+  risk: 'Low' | 'Medium' | 'High' | 'Critical';
+  verdict: 'Recommended' | 'Review' | 'Avoid';
+  riskTone: 'success' | 'warning' | 'danger' | 'critical';
+}
 
 export function Dashboard() {
   const { state, loading, hasData, error, stale, refresh } = useAppData();
@@ -131,6 +141,41 @@ export function Dashboard() {
       .slice(0, 5);
   }, [state]);
 
+  // Recent analyses derived from on-chain verdicts
+  const recentAnalyses = useMemo((): RecentAnalysis[] => {
+    if (!state) return [];
+    const verdicts = state.ledger.latestVerdicts;
+    if (verdicts.length === 0) return [];
+    
+    return verdicts
+      .slice(0, 5)
+      .map((v) => {
+        const bridge = state.ledger.bridges.find((b) => b.id === v.key);
+        if (!bridge) return null;
+        const verdictNum = Number(v.value);
+        const riskLabels: RecentAnalysis['risk'][] = ['Low', 'Medium', 'High', 'Critical'];
+        const verdictLabels: RecentAnalysis['verdict'][] = ['Recommended', 'Review', 'Avoid', 'Avoid'];
+        const riskTones: RecentAnalysis['riskTone'][] = ['success', 'warning', 'danger', 'critical'];
+        return {
+          route: `${chainName(bridge.srcChain)} → ${chainName(bridge.dstChain)}`,
+          risk: riskLabels[verdictNum] ?? 'Low',
+          verdict: verdictLabels[verdictNum] ?? 'Recommended',
+          riskTone: riskTones[verdictNum] ?? 'success',
+        };
+      })
+      .filter((a): a is RecentAnalysis => a !== null);
+  }, [state]);
+
+  // Recommended action based on latest verdict
+  const recommendedAction = useMemo(() => {
+    if (!state || state.ledger.latestVerdicts.length === 0) return null;
+    const latestVerdict = state.ledger.latestVerdicts[0];
+    const verdictNum = Number(latestVerdict.value);
+    if (verdictNum === 0) return { label: 'Proceed', tone: 'success' as const, icon: CheckCircle2 };
+    if (verdictNum === 1) return { label: 'Review before proceeding', tone: 'warning' as const, icon: AlertCircle };
+    return { label: 'Avoid this route', tone: 'critical' as const, icon: AlertCircle };
+  }, [state]);
+
   // ── Loading: only before the very first successful fetch ──────────────────
   if (loading) {
     return <EmptyState title="Reading ZeroBridge state…" body="Fetching live bridge state directly from the Midnight contract indexer." />;
@@ -151,7 +196,7 @@ export function Dashboard() {
           Reconnecting to ZeroBridge backend — showing last known data
         </div>
       )}
-      <Stagger className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <Stagger className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <StaggerItem>
           <StatCard
             label="Bridges registered"
@@ -201,7 +246,122 @@ export function Dashboard() {
             loading={loading}
           />
         </StaggerItem>
+        <StaggerItem>
+          <StatCard
+            label="Connected wallet"
+            value={connectedAddress ? (
+              <span className="font-mono text-slate-900 dark:text-white">
+                {connectedAddress.slice(0, 8)}…{connectedAddress.slice(-6)}
+              </span>
+            ) : (
+              <span className="text-slate-500 dark:text-slate-400">Not connected</span>
+            )}
+            icon={Wallet}
+            tone="cyan"
+            loading={loading}
+          />
+        </StaggerItem>
       </Stagger>
+
+      {/* Recent Analyses + Recommended Action + Privacy Status */}
+      <section className="grid gap-6 lg:grid-cols-3">
+        {/* A. Recent Analyses */}
+        <MotionCard className="card p-6 lg:col-span-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Recent Analyses
+            </h2>
+            <Badge tone="violet">on-chain</Badge>
+          </div>
+          {recentAnalyses.length === 0 ? (
+            <div className="mt-4 card flex items-center justify-center p-8 text-sm text-slate-500 dark:text-slate-400">
+              No analyses yet — run an evaluation on the Analyze page
+            </div>
+          ) : (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead>
+                  <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500 dark:border-white/[0.08] dark:text-slate-400">
+                    <th className="px-4 py-3 font-medium">Route</th>
+                    <th className="px-4 py-3 font-medium text-center">Risk</th>
+                    <th className="px-4 py-3 font-medium text-center">Verdict</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-white/[0.06]">
+                  {recentAnalyses.map((analysis, i) => (
+                    <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
+                      <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
+                        {analysis.route}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <Badge tone={analysis.riskTone}>{analysis.risk}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <Badge tone={analysis.riskTone}>{analysis.verdict}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </MotionCard>
+
+        {/* B. Recommended Action + C. Privacy Status */}
+        <div className="space-y-4">
+          {/* Recommended Action */}
+          <MotionCard className="card p-6">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="size-4 text-cyan-400" />
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Recommended Action
+              </h2>
+            </div>
+            {recommendedAction ? (
+              <div className="mt-4">
+                <div className={cn(
+                  'flex items-center gap-3 rounded-xl p-4',
+                  recommendedAction.tone === 'success' && 'border border-emerald-400/30 bg-emerald-400/10 text-emerald-500 dark:text-emerald-300',
+                  recommendedAction.tone === 'warning' && 'border border-amber-400/30 bg-amber-400/10 text-amber-500 dark:text-amber-300',
+                  recommendedAction.tone === 'critical' && 'border border-red-400/30 bg-red-400/10 text-red-500 dark:text-red-300',
+                )}>
+                  <recommendedAction.icon className="size-5 shrink-0" />
+                  <div>
+                    <p className="text-lg font-bold">{recommendedAction.label}</p>
+                    <p className="text-xs mt-0.5 opacity-80">
+                      Based on latest on-chain verdict: {state.ledger.lastVerdictLabel}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 card flex items-center justify-center p-6 text-sm text-slate-500 dark:text-slate-400">
+                Run an analysis to see recommendation
+              </div>
+            )}
+          </MotionCard>
+
+          {/* Privacy Status */}
+          <MotionCard className="card p-6">
+            <div className="flex items-center gap-2">
+              <Lock className="size-4 text-violet-400" />
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Privacy Status
+              </h2>
+            </div>
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center gap-3 rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-3 text-xs text-cyan-600 dark:text-cyan-300">
+                <Lock className="size-4 shrink-0" />
+                <span>ZK Proof: Generated locally in browser</span>
+              </div>
+              <div className="flex items-center gap-3 rounded-xl border border-violet-400/30 bg-violet-400/5 p-3 text-xs text-violet-600 dark:text-violet-300">
+                <Lock className="size-4 shrink-0" />
+                <span>Private inputs: Never sent to backend</span>
+              </div>
+            </div>
+          </MotionCard>
+        </div>
+      </section>
 
       {/* Wallet + risk gauge + recommendation */}
       <section className="grid gap-6 xl:grid-cols-3">
